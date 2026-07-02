@@ -1,6 +1,7 @@
 import type { ApiResult } from "@/lib/api/types";
 import type { MarketData, PolicyInfo } from "@/types";
 import { getEnv } from "@/lib/api/env";
+import { createTimeoutSignal } from "@/lib/api/timeout";
 
 interface KosisSearchItem {
   ORG_ID?: string;
@@ -85,7 +86,7 @@ async function searchStatistics(
     `https://kosis.kr/openapi/statisticsSearch.do?${params}`,
     {
       cache: "no-store",
-      signal: AbortSignal.timeout(12000),
+      signal: createTimeoutSignal(10000),
     }
   );
 
@@ -125,7 +126,7 @@ async function fetchStatData(
     `https://kosis.kr/openapi/Param/statisticsParameterData.do?${params}`,
     {
       cache: "no-store",
-      signal: AbortSignal.timeout(12000),
+      signal: createTimeoutSignal(10000),
     }
   );
 
@@ -172,12 +173,16 @@ export async function getMarketData(query: string): Promise<ApiResult<MarketData
   try {
     const searchTerms = getSearchTerms(query);
     const marketData: MarketData[] = [];
+    const isVercel = Boolean(process.env.VERCEL);
+    const maxTerms = isVercel ? 2 : searchTerms.length;
 
-    for (const term of searchTerms) {
+    for (const term of searchTerms.slice(0, maxTerms)) {
       if (marketData.length >= 3) break;
 
       const tables = await searchStatistics(apiKey, term);
-      for (const table of tables) {
+      const maxTables = isVercel ? 2 : tables.length;
+
+      for (const table of tables.slice(0, maxTables)) {
         if (marketData.length >= 3) break;
         if (!table.ORG_ID || !table.TBL_ID) continue;
 

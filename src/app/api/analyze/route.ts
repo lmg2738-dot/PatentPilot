@@ -3,16 +3,16 @@ import { z } from "zod";
 import { searchPatents } from "@/lib/api/kipris";
 import { searchNtisProjects } from "@/lib/api/ntis";
 import { getMarketData, getPolicyInfo } from "@/lib/api/kosis";
-import { analyzePatentIdea } from "@/lib/api/openai";
 import { createClient } from "@/lib/supabase/server";
 import type { DataSourcesMeta } from "@/lib/api/types";
 
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const analyzeSchema = z.object({
   query: z.string().min(1).max(200),
 });
 
+/** 특허·시장·R&D 데이터만 빠르게 조회 (AI 제외) */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -48,31 +48,12 @@ export async function POST(request: NextRequest) {
       getPolicyInfo(query),
     ]);
 
-    const { patents, totalCount } = patentResult.data;
-    const ntisProjects = ntisResult.data;
-    const marketData = marketResult.data;
-    const policies = policyResult.data;
-
-    const analysisResult = await analyzePatentIdea({
-      query,
-      patents,
-      ntisProjects,
-      marketData,
-      policies,
-      patentCount: totalCount,
-    });
-
-    const analysis = {
-      ...analysisResult.data,
-      similarPatentCount: totalCount,
-    };
-
     const sources: DataSourcesMeta = {
       patents: patentResult.source,
       ntis: ntisResult.source,
       market: marketResult.source,
       policies: policyResult.source,
-      analysis: analysisResult.source,
+      analysis: "mock",
     };
 
     const messages = {
@@ -80,16 +61,10 @@ export async function POST(request: NextRequest) {
       ntis: ntisResult.message,
       market: marketResult.message,
       policies: policyResult.message,
-      analysis: analysisResult.message,
+      analysis: "AI 분석 대기 중",
     };
 
     if (user && supabase) {
-      await supabase.from("search_history").insert({
-        user_id: user.id,
-        query,
-        analysis,
-      });
-
       const { data: profile } = await supabase
         .from("profiles")
         .select("search_count")
@@ -106,12 +81,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       query,
-      patents,
-      patentCount: totalCount,
-      ntisProjects,
-      marketData,
-      policies,
-      analysis,
+      patents: patentResult.data.patents,
+      patentCount: patentResult.data.totalCount,
+      ntisProjects: ntisResult.data,
+      marketData: marketResult.data,
+      policies: policyResult.data,
       sources,
       messages,
     });
@@ -119,7 +93,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "유효하지 않은 입력입니다." }, { status: 400 });
     }
-    console.error("Analysis error:", error);
-    return NextResponse.json({ error: "분석 중 오류가 발생했습니다." }, { status: 500 });
+    console.error("Analyze data error:", error);
+    return NextResponse.json({ error: "데이터 조회 중 오류가 발생했습니다." }, { status: 500 });
   }
 }

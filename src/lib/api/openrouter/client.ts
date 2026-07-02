@@ -175,7 +175,7 @@ export async function createFreeChatCompletion(
         model,
         messages: params.messages,
         temperature: params.temperature ?? 0.7,
-        max_tokens: params.max_tokens ?? 4000,
+        max_tokens: params.max_tokens ?? 2000,
       });
 
       const content = completion.choices[0]?.message?.content || "";
