@@ -13,6 +13,8 @@ export default function PatentSearchPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [patents, setPatents] = useState<PatentResult[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [source, setSource] = useState<"live" | "mock" | "">("");
   const [searched, setSearched] = useState(false);
 
   const handleSearch = async () => {
@@ -24,8 +26,12 @@ export default function PatentSearchPage() {
       const response = await fetch(`/api/patents?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       setPatents(data.patents || []);
+      setTotalCount(data.totalCount || data.patents?.length || 0);
+      setSource(data.source || "");
     } catch {
       setPatents([]);
+      setTotalCount(0);
+      setSource("");
     } finally {
       setLoading(false);
     }
@@ -61,10 +67,27 @@ export default function PatentSearchPage() {
 
           {searched && (
             <Card padding={false}>
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                 <p className="text-sm text-gray-500">
-                  &quot;{query}&quot; 검색 결과: <span className="font-semibold text-gray-900">{patents.length}건</span>
+                  &quot;{query}&quot; 검색 결과:{" "}
+                  <span className="font-semibold text-gray-900">
+                    {totalCount.toLocaleString()}건
+                  </span>
+                  {patents.length < totalCount && (
+                    <span className="text-gray-400"> (표시 {patents.length}건)</span>
+                  )}
                 </p>
+                {source && (
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      source === "live"
+                        ? "bg-green-50 text-green-700"
+                        : "bg-orange-50 text-orange-700"
+                    }`}
+                  >
+                    {source === "live" ? "KIPRIS 실제 API" : "Mock 데이터"}
+                  </span>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">

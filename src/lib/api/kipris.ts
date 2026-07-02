@@ -1,12 +1,26 @@
+import type { ApiResult } from "@/lib/api/types";
 import type { PatentResult } from "@/types";
+import { formatKiprisDate, getXmlItems, getXmlText } from "@/lib/api/xml";
 
-const KIPRIS_BASE_URL = "http://plus.kipris.or.kr/kipo-api/kipi";
+const KIPRIS_BASE_URL = "https://plus.kipris.or.kr/kipo-api/kipi";
 
-export async function searchPatents(query: string): Promise<PatentResult[]> {
+export interface PatentSearchResult {
+  patents: PatentResult[];
+  totalCount: number;
+}
+
+export async function searchPatents(query: string): Promise<ApiResult<PatentSearchResult>> {
   const apiKey = process.env.KIPRIS_API_KEY;
 
   if (!apiKey) {
-    return getMockPatentResults(query);
+    return {
+      data: {
+        patents: getMockPatentResults(query),
+        totalCount: 230,
+      },
+      source: "mock",
+      message: "KIPRIS_API_KEY 미설정",
+    };
   }
 
   try {
@@ -19,44 +33,80 @@ export async function searchPatents(query: string): Promise<PatentResult[]> {
 
     const response = await fetch(
       `${KIPRIS_BASE_URL}/patUtiModInfoSearchSevice/getWordSearch?${params}`,
-      { next: { revalidate: 3600 } }
+      { cache: "no-store" }
     );
 
+    const xml = await response.text();
+
     if (!response.ok) {
-      return getMockPatentResults(query);
+      throw new Error(`KIPRIS HTTP ${response.status}`);
     }
 
-    const data = await response.json();
-    return parseKiprisResponse(data);
-  } catch {
-    return getMockPatentResults(query);
+    const successYN = getXmlText(xml, "successYN");
+    const resultCode = getXmlText(xml, "resultCode");
+
+    if (successYN !== "Y" || (resultCode && resultCode !== "00")) {
+      throw new Error(`KIPRIS API error: ${getXmlText(xml, "resultMsg") || resultCode}`);
+    }
+
+    const totalCount = parseInt(getXmlText(xml, "totalCount") || "0", 10);
+    const items = getXmlItems(xml);
+    const patents = items.map(mapKiprisItem);
+
+    if (patents.length === 0 && totalCount === 0) {
+      return {
+        data: { patents: [], totalCount: 0 },
+        source: "live",
+      };
+    }
+
+    return {
+      data: {
+        patents,
+        totalCount: totalCount || patents.length,
+      },
+      source: "live",
+    };
+  } catch (error) {
+    console.error("KIPRIS API failed:", error);
+    return {
+      data: {
+        patents: getMockPatentResults(query),
+        totalCount: 230,
+      },
+      source: "mock",
+      message: error instanceof Error ? error.message : "KIPRIS API 호출 실패",
+    };
   }
 }
 
-function parseKiprisResponse(data: Record<string, unknown>): PatentResult[] {
-  const items = (data as { response?: { body?: { items?: { item?: unknown[] } } } })
-    ?.response?.body?.items?.item;
-
-  if (!items || !Array.isArray(items)) return [];
-
-  return (items as Record<string, string>[]).map((item) => ({
-    applicationNumber: item.applicationNumber || "",
+function mapKiprisItem(item: Record<string, string>): PatentResult {
+  return {
+    applicationNumber: formatApplicationNumber(item.applicationNumber),
     title: item.inventionTitle || "",
     applicant: item.applicantName || "",
-    applicationDate: item.applicationDate || "",
+    applicationDate: formatKiprisDate(item.applicationDate),
     registrationStatus: item.registerStatus || "미등록",
-    ipc: item.ipcNumber || "",
+    ipc: (item.ipcNumber || "").split("|")[0]?.trim() || "",
     abstract: item.astrtCont || "",
-  }));
+  };
+}
+
+function formatApplicationNumber(value: string): string {
+  if (!value || value.includes("-")) return value;
+  if (value.length === 13) {
+    return `${value.slice(0, 2)}-${value.slice(2, 6)}-${value.slice(6)}`;
+  }
+  return value;
 }
 
 function getMockPatentResults(query: string): PatentResult[] {
   const competitors = [
-  "Hanwha Vision",
-  "LG CNS",
-  "SK쉴더스",
-  "삼성전자",
-  "ETRI",
+    "Hanwha Vision",
+    "LG CNS",
+    "SK쉴더스",
+    "삼성전자",
+    "ETRI",
   ];
 
   return Array.from({ length: 10 }, (_, i) => ({
@@ -66,11 +116,11 @@ function getMockPatentResults(query: string): PatentResult[] {
     applicationDate: `202${3 + (i % 2)}-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}`,
     registrationStatus: i % 3 === 0 ? "등록" : "출원",
     ipc: `G06V${10 + (i % 5)}/00`,
-    abstract: `${query} 기술을 활용한 ${["실시간 영상 분석", "지능형 감시", "이상 상황 탐지", "자동 경보 시스템", "데이터 융합 분석"][i % 5]}에 관한 발명으로, 딥러닝 기반 알고리즘을 적용하여 기존 기술 대비 정확도와 처리 속도를 개선한다.`,
+    abstract: `${query} 기술을 활용한 Mock 데이터입니다.`,
   }));
 }
 
 export async function getPatentCount(query: string): Promise<number> {
-  const results = await searchPatents(query);
-  return results.length > 0 ? Math.max(results.length * 23, 50) : 0;
+  const result = await searchPatents(query);
+  return result.data.totalCount;
 }

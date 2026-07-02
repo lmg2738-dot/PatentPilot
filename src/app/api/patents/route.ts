@@ -12,9 +12,15 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("query") || "";
     const { query: validatedQuery } = searchSchema.parse({ query });
 
-    const patents = await searchPatents(validatedQuery);
+    const result = await searchPatents(validatedQuery);
 
-    return NextResponse.json({ patents, count: patents.length });
+    return NextResponse.json({
+      patents: result.data.patents,
+      count: result.data.patents.length,
+      totalCount: result.data.totalCount,
+      source: result.source,
+      message: result.message,
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "유효하지 않은 검색어입니다." }, { status: 400 });

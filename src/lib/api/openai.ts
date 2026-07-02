@@ -1,5 +1,6 @@
 import { PATENT_ANALYST_PROMPT, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
+import type { ApiResult } from "@/lib/api/types";
 import type { AnalysisResult, PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
 
 interface AnalyzeInput {
@@ -11,15 +12,19 @@ interface AnalyzeInput {
   patentCount: number;
 }
 
-export async function analyzePatentIdea(input: AnalyzeInput): Promise<AnalysisResult> {
+export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<AnalysisResult>> {
   if (!process.env.OPENROUTER_API_KEY) {
-    return getMockAnalysis(input);
+    return {
+      data: getMockAnalysis(input),
+      source: "mock",
+      message: "OPENROUTER_API_KEY 미설정",
+    };
   }
 
   try {
     const context = buildAnalysisContext(input);
 
-    const { content } = await createFreeChatCompletion({
+    const { content, model } = await createFreeChatCompletion({
       messages: [
         { role: "system", content: PATENT_ANALYST_PROMPT },
         { role: "user", content: context },
@@ -28,10 +33,18 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<AnalysisRe
       max_tokens: 4000,
     });
 
-    return parseAnalysisResponse(content, input);
+    return {
+      data: parseAnalysisResponse(content, input),
+      source: "live",
+      message: `OpenRouter (${model})`,
+    };
   } catch (error) {
     console.error("OpenRouter analysis failed, using mock:", error);
-    return getMockAnalysis(input);
+    return {
+      data: getMockAnalysis(input),
+      source: "mock",
+      message: error instanceof Error ? error.message : "OpenRouter API 호출 실패",
+    };
   }
 }
 

@@ -5,7 +5,9 @@ import { Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { AnalysisDashboard } from "@/components/analysis/AnalysisDashboard";
+import { DataSourcesBanner } from "@/components/analysis/DataSourcesBanner";
 import type { AnalysisResult } from "@/types";
+import type { DataSourcesMeta } from "@/lib/api/types";
 
 interface SearchBoxProps {
   onAnalyze?: (query: string, result: AnalysisResult) => void;
@@ -24,6 +26,8 @@ export function SearchBox({
   const [result, setResult] = useState<{
     query: string;
     analysis: AnalysisResult;
+    sources?: DataSourcesMeta;
+    messages?: Partial<Record<keyof DataSourcesMeta, string>>;
   } | null>(null);
 
   const handleAnalyze = async () => {
@@ -48,7 +52,12 @@ export function SearchBox({
         throw new Error(data.error || "분석 중 오류가 발생했습니다.");
       }
 
-      const analysisResult = { query: data.query, analysis: data.analysis };
+      const analysisResult = {
+        query: data.query,
+        analysis: data.analysis,
+        sources: data.sources,
+        messages: data.messages,
+      };
       setResult(analysisResult);
       onAnalyze?.(data.query, data.analysis);
     } catch (err) {
@@ -77,6 +86,10 @@ export function SearchBox({
           {buttonText}
         </Button>
       </div>
+
+      {result?.sources && (
+        <DataSourcesBanner sources={result.sources} messages={result.messages} />
+      )}
 
       {result && (
         <AnalysisDashboard query={result.query} analysis={result.analysis} />

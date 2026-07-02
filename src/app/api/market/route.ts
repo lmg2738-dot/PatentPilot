@@ -12,12 +12,23 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("query") || "";
     const { query: validatedQuery } = searchSchema.parse({ query });
 
-    const [marketData, policies] = await Promise.all([
+    const [marketResult, policyResult] = await Promise.all([
       getMarketData(validatedQuery),
       getPolicyInfo(validatedQuery),
     ]);
 
-    return NextResponse.json({ marketData, policies });
+    return NextResponse.json({
+      marketData: marketResult.data,
+      policies: policyResult.data,
+      sources: {
+        market: marketResult.source,
+        policies: policyResult.source,
+      },
+      messages: {
+        market: marketResult.message,
+        policies: policyResult.message,
+      },
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "유효하지 않은 검색어입니다." }, { status: 400 });
