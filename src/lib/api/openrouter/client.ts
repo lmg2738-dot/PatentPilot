@@ -118,15 +118,21 @@ async function fetchFreeModelsFromApi(): Promise<string[]> {
   return [...new Set([...freeVariant, ...others])];
 }
 
-const VERCEL_FALLBACK_MODELS = [
-  "openrouter/free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
+const VERCEL_FAST_MODELS = [
+  "google/gemma-2-9b-it:free",
+  "mistralai/mistral-7b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
 ];
 
-export async function getFreeModelCandidates(): Promise<string[]> {
+const VERCEL_FALLBACK_MODELS = [
+  "google/gemma-2-9b-it:free",
+  "mistralai/mistral-7b-instruct:free",
+];
+
+export async function getFreeModelCandidates(fast = false): Promise<string[]> {
   if (process.env.VERCEL) {
-    return VERCEL_FALLBACK_MODELS.filter((id) => !isModelBlocked(id));
+    const models = fast ? VERCEL_FAST_MODELS : VERCEL_FALLBACK_MODELS;
+    return models.filter((id) => !isModelBlocked(id));
   }
 
   const now = Date.now();
@@ -162,6 +168,7 @@ interface ChatCompletionParams {
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   temperature?: number;
   max_tokens?: number;
+  fast?: boolean;
 }
 
 export async function createFreeChatCompletion(
@@ -172,12 +179,18 @@ export async function createFreeChatCompletion(
     throw new Error("OPENROUTER_API_KEY is not configured");
   }
 
-  const candidates = await getFreeModelCandidates();
-  const modelsToTry = process.env.VERCEL ? candidates.slice(0, 2) : candidates;
+  const isVercel = Boolean(process.env.VERCEL);
+  const candidates = await getFreeModelCandidates(params.fast ?? isVercel);
+  const modelsToTry = isVercel
+    ? candidates.slice(0, params.fast === false ? 2 : 1)
+    : candidates;
 
   if (modelsToTry.length === 0) {
     throw new Error("No available free OpenRouter models");
   }
+
+  const requestTimeoutMs = isVercel ? 9000 : 60000;
+  const maxTokens = params.max_tokens ?? (isVercel ? 700 : 2000);
 
   let lastError: unknown;
 
@@ -187,12 +200,10 @@ export async function createFreeChatCompletion(
         {
           model,
           messages: params.messages,
-          temperature: params.temperature ?? 0.7,
-          max_tokens: params.max_tokens ?? 2000,
+          temperature: params.temperature ?? 0.5,
+          max_tokens: maxTokens,
         },
-        process.env.VERCEL
-          ? { timeout: 6000 }
-          : { timeout: 60000 }
+        { timeout: requestTimeoutMs }
       );
 
       const content = completion.choices[0]?.message?.content || "";

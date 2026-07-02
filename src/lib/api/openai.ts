@@ -1,6 +1,5 @@
-import { PATENT_ANALYST_PROMPT, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
+import { PATENT_ANALYST_PROMPT, PATENT_ANALYST_PROMPT_FAST, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
-import { withTimeout } from "@/lib/api/timeout";
 import { getEnv } from "@/lib/api/env";
 import type { ApiResult } from "@/lib/api/types";
 import type { AnalysisResult, PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
@@ -24,23 +23,21 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
   }
 
   try {
-    const context = buildAnalysisContext(input);
-    const aiTimeoutMs = process.env.VERCEL ? 7000 : 90000;
+    const isVercel = Boolean(process.env.VERCEL);
+    const context = buildAnalysisContext(input, isVercel);
 
-    const result = await withTimeout(
-      createFreeChatCompletion({
-        messages: [
-          { role: "system", content: PATENT_ANALYST_PROMPT },
-          { role: "user", content: context },
-        ],
-        temperature: 0.7,
-        max_tokens: 1500,
-      }),
-      aiTimeoutMs,
-      () => {
-        throw new Error("AI_TIMEOUT");
-      }
-    );
+    const result = await createFreeChatCompletion({
+      messages: [
+        {
+          role: "system",
+          content: isVercel ? PATENT_ANALYST_PROMPT_FAST : PATENT_ANALYST_PROMPT,
+        },
+        { role: "user", content: context },
+      ],
+      temperature: 0.5,
+      max_tokens: isVercel ? 700 : 1500,
+      fast: isVercel,
+    });
 
     const { content, model } = result;
 
@@ -50,13 +47,15 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
       message: `OpenRouter (${model})`,
     };
   } catch (error) {
-    const isTimeout = error instanceof Error && error.message === "AI_TIMEOUT";
+    const isTimeout =
+      error instanceof Error &&
+      (error.message === "AI_TIMEOUT" || error.message.toLowerCase().includes("timeout"));
     console.error("OpenRouter analysis failed, using mock:", error);
     return {
       data: getMockAnalysis(input),
       source: "mock",
       message: isTimeout
-        ? "AI 분석 시간 초과 — 특허·시장 데이터 기반 Mock 결과"
+        ? "AI 분석 시간 초과 — 무료 모델 응답 지연으로 Mock 표시"
         : error instanceof Error
           ? error.message
           : "OpenRouter API 호출 실패",
@@ -86,7 +85,23 @@ export async function generatePatentDraft(idea: string): Promise<string> {
   }
 }
 
-function buildAnalysisContext(input: AnalyzeInput): string {
+function buildAnalysisContext(input: AnalyzeInput, compact = false): string {
+  const patentLines = input.patents
+    .slice(0, compact ? 3 : 10)
+    .map((p) =>
+      compact
+        ? `- ${p.title} (${p.applicant})`
+        : `- [${p.applicationNumber}] ${p.title} (출원인: ${p.applicant}, IPC: ${p.ipc})`
+    )
+    .join("\n");
+
+  if (compact) {
+    return `아이디어: ${input.query}
+유사특허 ${input.patentCount}건
+${patentLines}
+시장: ${input.marketData[0]?.marketName || "-"} ${input.marketData[0]?.marketSize || "-"} 성장 ${input.marketData[0]?.growthRate || "-"}`;
+  }
+
   return `
 ## 분석 대상 아이디어
 ${input.query}
@@ -105,17 +120,39 @@ ${input.policies.map((p) => `- ${p.title} (${p.department})`).join("\n")}
 `;
 }
 
-function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisResult {
+function parseStructuredJson(content: string): Record<string, unknown> {
   const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-  let structured: Record<string, unknown> = {};
-
   if (jsonMatch) {
     try {
-      structured = JSON.parse(jsonMatch[1]);
+      return JSON.parse(jsonMatch[1]);
     } catch {
-      // JSON 파싱 실패 시 기본값 사용
+      // continue
     }
   }
+
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // continue
+    }
+  }
+
+  const braceMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try {
+      return JSON.parse(braceMatch[0]);
+    } catch {
+      // continue
+    }
+  }
+
+  return {};
+}
+
+function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisResult {
+  const structured = parseStructuredJson(content);
 
   const competitors = (structured.competitors as string[]) ||
     [...new Set(input.patents.map((p) => p.applicant))].slice(0, 5);
@@ -130,7 +167,8 @@ function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisRe
     marketPotential: {
       marketSize: (structured.marketSize as string) || input.marketData[0]?.marketSize || "4조원",
       growthRate: (structured.growthRate as string) || input.marketData[0]?.growthRate || "18%",
-      summary: "시장 성장세가 양호하며 정부 지원 정책과 맞물려 사업 기회가 큽니다.",
+      summary: (structured.marketSummary as string) ||
+        "시장 성장세가 양호하며 정부 지원 정책과 맞물려 사업 기회가 큽니다.",
     },
     governmentSupport: (structured.governmentSupport as string[]) ||
       input.policies.map((p) => p.title),

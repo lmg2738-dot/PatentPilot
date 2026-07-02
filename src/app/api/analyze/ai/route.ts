@@ -7,7 +7,7 @@ import type { PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types"
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const AI_TIMEOUT_MS = process.env.VERCEL ? 8500 : 90000;
+const AI_TIMEOUT_MS = process.env.VERCEL ? 9500 : 90000;
 
 const aiSchema = z.object({
   query: z.string().min(1).max(200),
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       () => ({
         data: createMockAnalysis(input),
         source: "mock" as const,
-        message: "AI 분석 시간 초과 — Mock 결과 표시",
+        message: "AI 분석 시간 초과 — 무료 모델 응답 지연으로 Mock 표시",
       })
     );
 

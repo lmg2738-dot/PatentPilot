@@ -15,6 +15,8 @@ const labels: Record<keyof DataSourcesMeta, string> = {
   analysis: "AI",
 };
 
+const optionalSources: Array<keyof DataSourcesMeta> = ["ntis", "policies"];
+
 function SourceBadge({
   label,
   source,
@@ -51,16 +53,43 @@ function SourceBadge({
   );
 }
 
+function getBannerMessage(
+  sources: DataSourcesMeta,
+  messages?: Partial<Record<keyof DataSourcesMeta, string>>
+): string | null {
+  const requiredMocks = (["patents", "market", "analysis"] as const).filter(
+    (key) => sources[key] === "mock"
+  );
+
+  const missingKeyMocks = requiredMocks.filter((key) =>
+    messages?.[key]?.includes("미설정")
+  );
+
+  if (missingKeyMocks.length > 0) {
+    return "필수 API 키가 없어 일부 데이터가 Mock입니다. Vercel 환경변수 등록 후 Redeploy하세요. 키 끝의 = 문자도 포함해야 합니다.";
+  }
+
+  if (sources.analysis === "mock") {
+    return "AI는 무료 모델 응답이 느려 Mock으로 표시되었습니다. 특허·시장 데이터는 실제 API 결과입니다.";
+  }
+
+  const optionalMocks = optionalSources.filter((key) => sources[key] === "mock");
+  if (optionalMocks.length > 0 && requiredMocks.length === 0) {
+    return "NTIS·정책 API는 선택 사항이며, 키 없이 Mock으로 표시됩니다.";
+  }
+
+  return null;
+}
+
 export function DataSourcesBanner({ sources, messages, className }: DataSourcesBannerProps) {
+  const bannerMessage = getBannerMessage(sources, messages);
   const mockCount = Object.values(sources).filter((s) => s === "mock").length;
 
   return (
     <div className={cn("space-y-2", className)}>
-      {mockCount > 0 && (
+      {mockCount > 0 && bannerMessage && (
         <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-          일부 데이터가 Mock입니다. Vercel 사용 시 환경변수 등록 후 <strong>Redeploy</strong>가
-          필요합니다. 키 끝의 <code className="text-xs">=</code> 문자도 포함해야 합니다.
-          {" "}
+          {bannerMessage}{" "}
           <a href="/api/debug/env-check" target="_blank" className="underline font-medium">
             API 진단
           </a>

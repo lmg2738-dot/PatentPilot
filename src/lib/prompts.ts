@@ -31,6 +31,24 @@ Also provide structured data at the end in JSON format:
 }
 \`\`\``;
 
+/** Vercel 10초 제한용 — JSON만 빠르게 반환 */
+export const PATENT_ANALYST_PROMPT_FAST = `You are a Korean patent analyst. Reply with ONLY one valid JSON object. No markdown, no explanation.
+
+Required keys:
+patentabilityScore (0-100 number),
+differentiationStrategy (string),
+competitors (string[]),
+marketSize (string),
+growthRate (string),
+governmentSupport (string[]),
+risks (string[]),
+recommendedActions (string[]),
+technicalDifficulty (string),
+recommendedBM (string),
+developmentPeriod (string),
+investmentPotential (string),
+marketSummary (string, one sentence)`;
+
 export const PATENT_DRAFT_PROMPT = `You are an experienced Korean patent attorney assistant.
 
 Based on the user's invention idea, generate:
