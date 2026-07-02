@@ -86,7 +86,7 @@ async function searchStatistics(
     `https://kosis.kr/openapi/statisticsSearch.do?${params}`,
     {
       cache: "no-store",
-      signal: createTimeoutSignal(10000),
+      signal: createTimeoutSignal(6000),
     }
   );
 
@@ -126,7 +126,7 @@ async function fetchStatData(
     `https://kosis.kr/openapi/Param/statisticsParameterData.do?${params}`,
     {
       cache: "no-store",
-      signal: createTimeoutSignal(10000),
+      signal: createTimeoutSignal(6000),
     }
   );
 
@@ -159,6 +159,33 @@ async function fetchStatDataWithFallback(
   return [];
 }
 
+async function getMarketDataFast(
+  apiKey: string,
+  query: string
+): Promise<MarketData[]> {
+  const tables = await searchStatistics(apiKey, "정보통신산업");
+  const table = tables.find((t) => t.ORG_ID && t.TBL_ID) ?? tables[0];
+  if (!table?.ORG_ID || !table.TBL_ID) {
+    throw new Error("KOSIS 통계표 없음");
+  }
+
+  const rows = await fetchStatData(apiKey, table.ORG_ID, table.TBL_ID, "Q");
+  if (rows.length === 0) {
+    throw new Error("KOSIS 데이터 없음");
+  }
+
+  const latest = rows[0];
+  return [
+    {
+      marketName: latest.ITM_NM || table.TBL_NM || "정보통신산업",
+      marketSize: formatMarketValue(latest.DT || "-", latest.UNIT_NM),
+      growthRate: calcGrowthRate(rows),
+      year: latest.PRD_DE?.slice(0, 4) || "-",
+      source: "KOSIS",
+    },
+  ];
+}
+
 export async function getMarketData(query: string): Promise<ApiResult<MarketData[]>> {
   const apiKey = getEnv("KOSIS_API_KEY");
 
@@ -170,19 +197,23 @@ export async function getMarketData(query: string): Promise<ApiResult<MarketData
     };
   }
 
+  const isVercel = Boolean(process.env.VERCEL);
+
   try {
+    if (isVercel) {
+      const data = await getMarketDataFast(apiKey, query);
+      return { data, source: "live" };
+    }
+
     const searchTerms = getSearchTerms(query);
     const marketData: MarketData[] = [];
-    const isVercel = Boolean(process.env.VERCEL);
-    const maxTerms = isVercel ? 2 : searchTerms.length;
 
-    for (const term of searchTerms.slice(0, maxTerms)) {
+    for (const term of searchTerms) {
       if (marketData.length >= 3) break;
 
       const tables = await searchStatistics(apiKey, term);
-      const maxTables = isVercel ? 2 : tables.length;
 
-      for (const table of tables.slice(0, maxTables)) {
+      for (const table of tables) {
         if (marketData.length >= 3) break;
         if (!table.ORG_ID || !table.TBL_ID) continue;
 

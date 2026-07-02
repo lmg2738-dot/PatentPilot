@@ -118,7 +118,17 @@ async function fetchFreeModelsFromApi(): Promise<string[]> {
   return [...new Set([...freeVariant, ...others])];
 }
 
+const VERCEL_FALLBACK_MODELS = [
+  "openrouter/free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+];
+
 export async function getFreeModelCandidates(): Promise<string[]> {
+  if (process.env.VERCEL) {
+    return VERCEL_FALLBACK_MODELS.filter((id) => !isModelBlocked(id));
+  }
+
   const now = Date.now();
 
   if (modelsCache && now - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS) {
@@ -163,20 +173,27 @@ export async function createFreeChatCompletion(
   }
 
   const candidates = await getFreeModelCandidates();
-  if (candidates.length === 0) {
+  const modelsToTry = process.env.VERCEL ? candidates.slice(0, 2) : candidates;
+
+  if (modelsToTry.length === 0) {
     throw new Error("No available free OpenRouter models");
   }
 
   let lastError: unknown;
 
-  for (const model of candidates) {
+  for (const model of modelsToTry) {
     try {
-      const completion = await client.chat.completions.create({
-        model,
-        messages: params.messages,
-        temperature: params.temperature ?? 0.7,
-        max_tokens: params.max_tokens ?? 2000,
-      });
+      const completion = await client.chat.completions.create(
+        {
+          model,
+          messages: params.messages,
+          temperature: params.temperature ?? 0.7,
+          max_tokens: params.max_tokens ?? 2000,
+        },
+        process.env.VERCEL
+          ? { timeout: 6000 }
+          : { timeout: 60000 }
+      );
 
       const content = completion.choices[0]?.message?.content || "";
       if (!content.trim()) {

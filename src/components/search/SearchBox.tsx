@@ -35,6 +35,32 @@ interface AnalyzeAiResponse {
   error?: string;
 }
 
+function buildFallbackAnalysis(
+  data: AnalyzeDataResponse
+): AnalysisResult {
+  const competitors = [...new Set(data.patents.map((p) => p.applicant))].slice(0, 5);
+  return {
+    patentabilityScore: 70,
+    similarPatentCount: data.patentCount,
+    similarPatents: data.patents.slice(0, 5),
+    competitors: competitors.length > 0 ? competitors : ["-"],
+    differentiationStrategy: "특허·시장 데이터 기반 차별화 전략 수립이 필요합니다.",
+    marketPotential: {
+      marketSize: (data.marketData[0] as { marketSize?: string })?.marketSize || "-",
+      growthRate: (data.marketData[0] as { growthRate?: string })?.growthRate || "-",
+      summary: "AI 분석 없이 데이터만 조회된 결과입니다.",
+    },
+    governmentSupport: (data.policies as { title: string }[]).map((p) => p.title),
+    risks: ["AI 분석 미완료"],
+    recommendedActions: ["AI 분석 재시도", "특허 상세 검색"],
+    technicalDifficulty: "-",
+    recommendedBM: "-",
+    developmentPeriod: "-",
+    investmentPotential: "-",
+    fullReport: "",
+  };
+}
+
 export function SearchBox({
   onAnalyze,
   placeholder = "분석할 아이디어를 입력하세요 (예: AI CCTV)",
@@ -44,6 +70,7 @@ export function SearchBox({
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [result, setResult] = useState<{
     query: string;
     analysis: AnalysisResult;
@@ -60,37 +87,64 @@ export function SearchBox({
     setLoading(true);
     setAiLoading(false);
     setError("");
+    setWarning("");
     setResult(null);
 
+    let data: AnalyzeDataResponse | null = null;
+
     try {
-      const { ok, data } = await fetchJson<AnalyzeDataResponse>("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim() }),
-      });
+      const { ok, data: dataResponse } = await fetchJson<AnalyzeDataResponse>(
+        "/api/analyze",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: query.trim() }),
+        },
+        15000
+      );
 
       if (!ok) {
-        throw new Error(data.error || "데이터 조회 중 오류가 발생했습니다.");
+        throw new Error(dataResponse.error || "데이터 조회 중 오류가 발생했습니다.");
       }
 
+      data = dataResponse;
       setLoading(false);
       setAiLoading(true);
 
-      const { ok: aiOk, data: aiData } = await fetchJson<AnalyzeAiResponse>("/api/analyze/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: data.query,
-          patentCount: data.patentCount,
-          patents: data.patents,
-          ntisProjects: data.ntisProjects,
-          marketData: data.marketData,
-          policies: data.policies,
-        }),
-      });
+      let aiData: AnalyzeAiResponse;
+      try {
+        const aiResponse = await fetchJson<AnalyzeAiResponse>(
+          "/api/analyze/ai",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: data.query,
+              patentCount: data.patentCount,
+              patents: data.patents,
+              ntisProjects: data.ntisProjects,
+              marketData: data.marketData,
+              policies: data.policies,
+            }),
+          },
+          15000
+        );
 
-      if (!aiOk) {
-        throw new Error(aiData.error || "AI 분석 중 오류가 발생했습니다.");
+        if (!aiResponse.ok) {
+          throw new Error(aiResponse.data.error || "AI 분석 실패");
+        }
+        aiData = aiResponse.data;
+      } catch (aiErr) {
+        setWarning(
+          aiErr instanceof Error
+            ? `${aiErr.message} — 특허·시장 데이터만 표시합니다.`
+            : "AI 분석 실패 — 특허·시장 데이터만 표시합니다."
+        );
+        aiData = {
+          analysis: buildFallbackAnalysis(data),
+          source: "mock",
+          message: "AI 분석 실패",
+        };
       }
 
       const sources: DataSourcesMeta = {
@@ -143,8 +197,14 @@ export function SearchBox({
       {(loading || aiLoading) && (
         <div className="flex items-center gap-2 text-sm text-brand-600 bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
           <Loader2 className="w-4 h-4 animate-spin" />
-          {loading ? "특허·시장 데이터 조회 중..." : "AI 분석 중... (최대 1~2분 소요)"}
+          {loading ? "특허·시장 데이터 조회 중..." : "AI 분석 중..."}
         </div>
+      )}
+
+      {warning && (
+        <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+          {warning}
+        </p>
       )}
 
       {result?.sources && (

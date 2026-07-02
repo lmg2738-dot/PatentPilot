@@ -4,13 +4,20 @@ import { searchPatents } from "@/lib/api/kipris";
 import { searchNtisProjects } from "@/lib/api/ntis";
 import { getMarketData, getPolicyInfo } from "@/lib/api/kosis";
 import { createClient } from "@/lib/supabase/server";
+import { withTimeout } from "@/lib/api/timeout";
+import type { ApiResult } from "@/lib/api/types";
 import type { DataSourcesMeta } from "@/lib/api/types";
+import type { PatentSearchResult } from "@/lib/api/kipris";
+import type { MarketData } from "@/types";
 
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
 
 const analyzeSchema = z.object({
   query: z.string().min(1).max(200),
 });
+
+const DATA_TIMEOUT_MS = process.env.VERCEL ? 5500 : 25000;
 
 /** 특허·시장·R&D 데이터만 빠르게 조회 (AI 제외) */
 export async function POST(request: NextRequest) {
@@ -42,9 +49,25 @@ export async function POST(request: NextRequest) {
     }
 
     const [patentResult, ntisResult, marketResult, policyResult] = await Promise.all([
-      searchPatents(query),
+      withTimeout<ApiResult<PatentSearchResult>>(
+        searchPatents(query),
+        DATA_TIMEOUT_MS,
+        () => ({
+          data: { patents: [], totalCount: 0 },
+          source: "mock",
+          message: "KIPRIS 시간 초과",
+        })
+      ),
       searchNtisProjects(query),
-      getMarketData(query),
+      withTimeout<ApiResult<MarketData[]>>(
+        getMarketData(query),
+        DATA_TIMEOUT_MS,
+        () => ({
+          data: [{ marketName: "시장 데이터", marketSize: "-", growthRate: "-", year: "-", source: "Mock" }],
+          source: "mock",
+          message: "KOSIS 시간 초과",
+        })
+      ),
       getPolicyInfo(query),
     ]);
 

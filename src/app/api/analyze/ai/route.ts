@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { analyzePatentIdea } from "@/lib/api/openai";
+import { analyzePatentIdea, createMockAnalysis } from "@/lib/api/openai";
+import { withTimeout } from "@/lib/api/timeout";
 import type { PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
 
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
+const AI_TIMEOUT_MS = process.env.VERCEL ? 7500 : 90000;
 
 const aiSchema = z.object({
   query: z.string().min(1).max(200),
@@ -43,20 +47,30 @@ const aiSchema = z.object({
   })),
 });
 
-/** AI 분석만 수행 (OpenRouter) */
+/** AI 분석만 수행 (OpenRouter) — 항상 JSON 반환 */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const parsed = aiSchema.parse(body);
 
-    const analysisResult = await analyzePatentIdea({
+    const input = {
       query: parsed.query,
       patents: parsed.patents as PatentResult[],
       ntisProjects: parsed.ntisProjects as NtisProject[],
       marketData: parsed.marketData as MarketData[],
       policies: parsed.policies as PolicyInfo[],
       patentCount: parsed.patentCount,
-    });
+    };
+
+    const analysisResult = await withTimeout(
+      analyzePatentIdea(input),
+      AI_TIMEOUT_MS,
+      () => ({
+        data: createMockAnalysis(input),
+        source: "mock" as const,
+        message: "AI 분석 시간 초과 — Mock 결과 표시",
+      })
+    );
 
     const analysis = {
       ...analysisResult.data,
@@ -73,6 +87,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "유효하지 않은 입력입니다." }, { status: 400 });
     }
     console.error("AI analyze error:", error);
-    return NextResponse.json({ error: "AI 분석 중 오류가 발생했습니다." }, { status: 500 });
+    return NextResponse.json({
+      analysis: createMockAnalysis({
+        query: "unknown",
+        patents: [],
+        ntisProjects: [],
+        marketData: [],
+        policies: [],
+        patentCount: 0,
+      }),
+      source: "mock",
+      message: "AI 분석 오류 — Mock 결과 표시",
+    });
   }
 }

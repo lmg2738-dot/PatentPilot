@@ -1,5 +1,6 @@
 import { PATENT_ANALYST_PROMPT, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
+import { withTimeout } from "@/lib/api/timeout";
 import { getEnv } from "@/lib/api/env";
 import type { ApiResult } from "@/lib/api/types";
 import type { AnalysisResult, PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
@@ -24,15 +25,24 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
 
   try {
     const context = buildAnalysisContext(input);
+    const aiTimeoutMs = process.env.VERCEL ? 7000 : 90000;
 
-    const { content, model } = await createFreeChatCompletion({
-      messages: [
-        { role: "system", content: PATENT_ANALYST_PROMPT },
-        { role: "user", content: context },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
+    const result = await withTimeout(
+      createFreeChatCompletion({
+        messages: [
+          { role: "system", content: PATENT_ANALYST_PROMPT },
+          { role: "user", content: context },
+        ],
+        temperature: 0.7,
+        max_tokens: 1500,
+      }),
+      aiTimeoutMs,
+      () => {
+        throw new Error("AI_TIMEOUT");
+      }
+    );
+
+    const { content, model } = result;
 
     return {
       data: parseAnalysisResponse(content, input),
@@ -40,11 +50,16 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
       message: `OpenRouter (${model})`,
     };
   } catch (error) {
+    const isTimeout = error instanceof Error && error.message === "AI_TIMEOUT";
     console.error("OpenRouter analysis failed, using mock:", error);
     return {
       data: getMockAnalysis(input),
       source: "mock",
-      message: error instanceof Error ? error.message : "OpenRouter API 호출 실패",
+      message: isTimeout
+        ? "AI 분석 시간 초과 — 특허·시장 데이터 기반 Mock 결과"
+        : error instanceof Error
+          ? error.message
+          : "OpenRouter API 호출 실패",
     };
   }
 }
@@ -136,6 +151,10 @@ function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisRe
     investmentPotential: (structured.investmentPotential as string) || "높음",
     fullReport: content,
   };
+}
+
+export function createMockAnalysis(input: AnalyzeInput): AnalysisResult {
+  return getMockAnalysis(input);
 }
 
 function getMockAnalysis(input: AnalyzeInput): AnalysisResult {

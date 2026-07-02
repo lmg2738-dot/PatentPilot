@@ -38,7 +38,7 @@ export async function searchPatents(query: string): Promise<ApiResult<PatentSear
       {
         cache: "no-store",
         headers: { Accept: "application/xml, text/xml, */*" },
-        signal: createTimeoutSignal(15000),
+        signal: createTimeoutSignal(8000),
       }
     );
 
