@@ -18,6 +18,16 @@ const analyzeSchema = z.object({
 });
 
 const DATA_TIMEOUT_MS = process.env.VERCEL ? 5500 : 25000;
+const SUPABASE_TIMEOUT_MS = process.env.VERCEL ? 2000 : 8000;
+
+async function getSupabaseUser(supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>) {
+  const result = await withTimeout(
+    supabase.auth.getUser(),
+    SUPABASE_TIMEOUT_MS,
+    () => null
+  );
+  return result ?? { data: { user: null }, error: null };
+}
 
 /** 특허·시장·R&D 데이터만 빠르게 조회 (AI 제외) */
 export async function POST(request: NextRequest) {
@@ -29,15 +39,22 @@ export async function POST(request: NextRequest) {
     let user = null;
 
     if (supabase) {
-      const { data } = await supabase.auth.getUser();
-      user = data.user;
+      const authResult = await getSupabaseUser(supabase);
+      user = authResult.data.user;
 
       if (user) {
-        const { data: profile } = await supabase
+        const profileQuery = supabase
           .from("profiles")
           .select("search_count, search_limit, plan")
           .eq("id", user.id)
           .single();
+
+        const profileResult = await withTimeout(
+          Promise.resolve(profileQuery),
+          SUPABASE_TIMEOUT_MS,
+          () => null
+        );
+        const profile = profileResult?.data ?? null;
 
         if (profile && profile.plan === "starter" && profile.search_count >= profile.search_limit) {
           return NextResponse.json(
@@ -88,14 +105,21 @@ export async function POST(request: NextRequest) {
     };
 
     if (user && supabase) {
-      const { data: profile } = await supabase
+      const countQuery = supabase
         .from("profiles")
         .select("search_count")
         .eq("id", user.id)
         .single();
 
+      const profileResult = await withTimeout(
+        Promise.resolve(countQuery),
+        SUPABASE_TIMEOUT_MS,
+        () => null
+      );
+      const profile = profileResult?.data ?? null;
+
       if (profile) {
-        await supabase
+        void supabase
           .from("profiles")
           .update({ search_count: profile.search_count + 1 })
           .eq("id", user.id);

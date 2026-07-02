@@ -7,7 +7,7 @@ import type { PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types"
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const AI_TIMEOUT_MS = process.env.VERCEL ? 7500 : 90000;
+const AI_TIMEOUT_MS = process.env.VERCEL ? 8500 : 90000;
 
 const aiSchema = z.object({
   query: z.string().min(1).max(200),

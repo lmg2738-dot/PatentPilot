@@ -26,10 +26,11 @@ export async function searchPatents(query: string): Promise<ApiResult<PatentSear
   }
 
   try {
+    const numOfRows = process.env.VERCEL ? "10" : "50";
     const params = new URLSearchParams({
       ServiceKey: apiKey,
       word: query,
-      numOfRows: "50",
+      numOfRows,
       pageNo: "1",
     });
 

@@ -118,14 +118,14 @@ export function SearchBox({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: data.query,
-              patentCount: data.patentCount,
-              patents: data.patents,
-              ntisProjects: data.ntisProjects,
-              marketData: data.marketData,
-              policies: data.policies,
-            }),
+          body: JSON.stringify({
+            query: data.query,
+            patentCount: data.patentCount,
+            patents: data.patents.slice(0, 5),
+            ntisProjects: data.ntisProjects.slice(0, 3),
+            marketData: data.marketData.slice(0, 3),
+            policies: data.policies.slice(0, 3),
+          }),
           },
           15000
         );
