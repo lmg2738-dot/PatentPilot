@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzePatentIdea, createMockAnalysis } from "@/lib/api/openai";
 import { withTimeout } from "@/lib/api/timeout";
-import type { PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
+import type { PatentResult, MarketData } from "@/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -21,29 +21,12 @@ const aiSchema = z.object({
     ipc: z.string(),
     abstract: z.string(),
   })),
-  ntisProjects: z.array(z.object({
-    projectId: z.string(),
-    title: z.string(),
-    organization: z.string(),
-    budget: z.string(),
-    participants: z.array(z.string()),
-    outcomes: z.string(),
-    startDate: z.string(),
-    endDate: z.string(),
-  })),
   marketData: z.array(z.object({
     marketName: z.string(),
     marketSize: z.string(),
     growthRate: z.string(),
     year: z.string(),
     source: z.string(),
-  })),
-  policies: z.array(z.object({
-    title: z.string(),
-    department: z.string(),
-    summary: z.string(),
-    url: z.string(),
-    publishedDate: z.string(),
   })),
 });
 
@@ -56,9 +39,7 @@ export async function POST(request: NextRequest) {
     const input = {
       query: parsed.query,
       patents: parsed.patents as PatentResult[],
-      ntisProjects: parsed.ntisProjects as NtisProject[],
       marketData: parsed.marketData as MarketData[],
-      policies: parsed.policies as PolicyInfo[],
       patentCount: parsed.patentCount,
     };
 
@@ -91,9 +72,7 @@ export async function POST(request: NextRequest) {
       analysis: createMockAnalysis({
         query: "unknown",
         patents: [],
-        ntisProjects: [],
         marketData: [],
-        policies: [],
         patentCount: 0,
       }),
       source: "mock",

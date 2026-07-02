@@ -20,9 +20,7 @@ interface AnalyzeDataResponse {
   query: string;
   patents: AnalysisResult["similarPatents"];
   patentCount: number;
-  ntisProjects: unknown[];
   marketData: unknown[];
-  policies: unknown[];
   sources: DataSourcesMeta;
   messages: Partial<Record<keyof DataSourcesMeta, string>>;
   error?: string;
@@ -50,7 +48,7 @@ function buildFallbackAnalysis(
       growthRate: (data.marketData[0] as { growthRate?: string })?.growthRate || "-",
       summary: "AI 분석 없이 데이터만 조회된 결과입니다.",
     },
-    governmentSupport: (data.policies as { title: string }[]).map((p) => p.title),
+    governmentSupport: ["정부 지원사업 검토 필요"],
     risks: ["AI 분석 미완료"],
     recommendedActions: ["AI 분석 재시도", "특허 상세 검색"],
     technicalDifficulty: "-",
@@ -122,9 +120,7 @@ export function SearchBox({
             query: data.query,
             patentCount: data.patentCount,
             patents: data.patents.slice(0, 5),
-            ntisProjects: data.ntisProjects.slice(0, 3),
             marketData: data.marketData.slice(0, 3),
-            policies: data.policies.slice(0, 3),
           }),
           },
           15000

@@ -1,5 +1,5 @@
 import type { ApiResult } from "@/lib/api/types";
-import type { MarketData, PolicyInfo } from "@/types";
+import type { MarketData } from "@/types";
 import { getEnv } from "@/lib/api/env";
 import { createTimeoutSignal } from "@/lib/api/timeout";
 
@@ -250,54 +250,6 @@ export async function getMarketData(query: string): Promise<ApiResult<MarketData
   }
 }
 
-export async function getPolicyInfo(query: string): Promise<ApiResult<PolicyInfo[]>> {
-  const apiKey = getEnv("POLICY_API_KEY");
-
-  if (!apiKey) {
-    return {
-      data: getMockPolicyInfo(query),
-      source: "mock",
-      message: "POLICY_API_KEY 미설정 (선택)",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `https://www.policy.go.kr/api/policy/search?query=${encodeURIComponent(query)}&apiKey=${apiKey}`,
-      { cache: "no-store", signal: AbortSignal.timeout(12000) }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Policy API HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const items = (data as { items?: Record<string, string>[] })?.items;
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      throw new Error("정책 검색 결과 없음");
-    }
-
-    return {
-      data: items.map((item) => ({
-        title: item.title || "",
-        department: item.department || "",
-        summary: item.summary || "",
-        url: item.url || "",
-        publishedDate: item.publishedDate || "",
-      })),
-      source: "live",
-    };
-  } catch (error) {
-    console.error("Policy API failed:", error);
-    return {
-      data: getMockPolicyInfo(query),
-      source: "mock",
-      message: error instanceof Error ? error.message : "정책 API 호출 실패",
-    };
-  }
-}
-
 function getMockMarketData(query: string): MarketData[] {
   const isSecurity = /cctv|보안|감시|영상/i.test(query);
 
@@ -308,18 +260,6 @@ function getMockMarketData(query: string): MarketData[] {
       growthRate: isSecurity ? "18%" : "12%",
       year: "2025",
       source: "Mock",
-    },
-  ];
-}
-
-function getMockPolicyInfo(query: string): PolicyInfo[] {
-  return [
-    {
-      title: "AI 바우처 지원사업 (Mock)",
-      department: "중소벤처기업부",
-      summary: `${query} 관련 Mock 정책 데이터`,
-      url: "https://www.k-startup.go.kr",
-      publishedDate: "2025-01-15",
     },
   ];
 }

@@ -9,13 +9,9 @@ interface DataSourcesBannerProps {
 
 const labels: Record<keyof DataSourcesMeta, string> = {
   patents: "KIPRIS",
-  ntis: "NTIS",
   market: "KOSIS",
-  policies: "정책",
   analysis: "AI",
 };
-
-const optionalSources: Array<keyof DataSourcesMeta> = ["ntis", "policies"];
 
 function SourceBadge({
   label,
@@ -57,12 +53,8 @@ function getBannerMessage(
   sources: DataSourcesMeta,
   messages?: Partial<Record<keyof DataSourcesMeta, string>>
 ): string | null {
-  const requiredMocks = (["patents", "market", "analysis"] as const).filter(
-    (key) => sources[key] === "mock"
-  );
-
-  const missingKeyMocks = requiredMocks.filter((key) =>
-    messages?.[key]?.includes("미설정")
+  const missingKeyMocks = (["patents", "market", "analysis"] as const).filter(
+    (key) => sources[key] === "mock" && messages?.[key]?.includes("미설정")
   );
 
   if (missingKeyMocks.length > 0) {
@@ -71,11 +63,6 @@ function getBannerMessage(
 
   if (sources.analysis === "mock") {
     return "AI는 무료 모델 응답이 느려 Mock으로 표시되었습니다. 특허·시장 데이터는 실제 API 결과입니다.";
-  }
-
-  const optionalMocks = optionalSources.filter((key) => sources[key] === "mock");
-  if (optionalMocks.length > 0 && requiredMocks.length === 0) {
-    return "NTIS·정책 API는 선택 사항이며, 키 없이 Mock으로 표시됩니다.";
   }
 
   return null;

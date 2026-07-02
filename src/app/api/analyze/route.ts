@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { searchPatents } from "@/lib/api/kipris";
-import { searchNtisProjects } from "@/lib/api/ntis";
-import { getMarketData, getPolicyInfo } from "@/lib/api/kosis";
+import { getMarketData } from "@/lib/api/kosis";
 import { createClient } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/api/timeout";
 import type { ApiResult } from "@/lib/api/types";
@@ -29,7 +28,7 @@ async function getSupabaseUser(supabase: NonNullable<Awaited<ReturnType<typeof c
   return result ?? { data: { user: null }, error: null };
 }
 
-/** 특허·시장·R&D 데이터만 빠르게 조회 (AI 제외) */
+/** 특허·시장 데이터만 빠르게 조회 (AI 제외) */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -65,7 +64,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const [patentResult, ntisResult, marketResult, policyResult] = await Promise.all([
+    const [patentResult, marketResult] = await Promise.all([
       withTimeout<ApiResult<PatentSearchResult>>(
         searchPatents(query),
         DATA_TIMEOUT_MS,
@@ -75,7 +74,6 @@ export async function POST(request: NextRequest) {
           message: "KIPRIS 시간 초과",
         })
       ),
-      searchNtisProjects(query),
       withTimeout<ApiResult<MarketData[]>>(
         getMarketData(query),
         DATA_TIMEOUT_MS,
@@ -85,22 +83,17 @@ export async function POST(request: NextRequest) {
           message: "KOSIS 시간 초과",
         })
       ),
-      getPolicyInfo(query),
     ]);
 
     const sources: DataSourcesMeta = {
       patents: patentResult.source,
-      ntis: ntisResult.source,
       market: marketResult.source,
-      policies: policyResult.source,
       analysis: "mock",
     };
 
     const messages = {
       patents: patentResult.message,
-      ntis: ntisResult.message,
       market: marketResult.message,
-      policies: policyResult.message,
       analysis: "AI 분석 대기 중",
     };
 
@@ -130,9 +123,7 @@ export async function POST(request: NextRequest) {
       query,
       patents: patentResult.data.patents,
       patentCount: patentResult.data.totalCount,
-      ntisProjects: ntisResult.data,
       marketData: marketResult.data,
-      policies: policyResult.data,
       sources,
       messages,
     });

@@ -8,8 +8,6 @@ export interface ApiResult<T> {
 
 export interface DataSourcesMeta {
   patents: DataSource;
-  ntis: DataSource;
   market: DataSource;
-  policies: DataSource;
   analysis: DataSource;
 }

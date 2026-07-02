@@ -8,7 +8,7 @@ Return a comprehensive analysis in Korean using markdown with these sections:
 2. **유사 특허 분석**
 3. **차별화 전략**
 4. **시장 잠재력**
-5. **정부 R&D 기회**
+5. **시장 잠재력**
 6. **경쟁사 분석**
 7. **리스크**
 8. **권장 다음 단계**

@@ -20,31 +20,12 @@ export interface PatentResult {
   abstract: string;
 }
 
-export interface NtisProject {
-  projectId: string;
-  title: string;
-  organization: string;
-  budget: string;
-  participants: string[];
-  outcomes: string;
-  startDate: string;
-  endDate: string;
-}
-
 export interface MarketData {
   marketName: string;
   marketSize: string;
   growthRate: string;
   year: string;
   source: string;
-}
-
-export interface PolicyInfo {
-  title: string;
-  department: string;
-  summary: string;
-  url: string;
-  publishedDate: string;
 }
 
 export interface AnalysisResult {

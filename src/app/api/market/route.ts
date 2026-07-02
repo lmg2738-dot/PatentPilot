@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getMarketData, getPolicyInfo } from "@/lib/api/kosis";
+import { getMarketData } from "@/lib/api/kosis";
 
 const searchSchema = z.object({
   query: z.string().min(1).max(200),
@@ -12,21 +12,15 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("query") || "";
     const { query: validatedQuery } = searchSchema.parse({ query });
 
-    const [marketResult, policyResult] = await Promise.all([
-      getMarketData(validatedQuery),
-      getPolicyInfo(validatedQuery),
-    ]);
+    const marketResult = await getMarketData(validatedQuery);
 
     return NextResponse.json({
       marketData: marketResult.data,
-      policies: policyResult.data,
       sources: {
         market: marketResult.source,
-        policies: policyResult.source,
       },
       messages: {
         market: marketResult.message,
-        policies: policyResult.message,
       },
     });
   } catch (error) {

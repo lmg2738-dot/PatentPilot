@@ -6,7 +6,6 @@ import {
   FileText,
   Bell,
   TrendingUp,
-  Shield,
   Zap,
   Check,
 } from "lucide-react";
@@ -37,11 +36,6 @@ const features = [
     icon: Bell,
     title: "특허 알림",
     description: "경쟁사 신규 특허 등록 시 실시간 알림",
-  },
-  {
-    icon: Shield,
-    title: "R&D 과제",
-    description: "NTIS 연동 국가 R&D 과제·정부 지원 검색",
   },
 ];
 
@@ -110,7 +104,7 @@ export default function HomePage() {
             <span className="text-brand-600">특허·사업성</span>까지 분석
           </h1>
           <p className="mt-6 text-lg text-gray-600 max-w-2xl mx-auto">
-            KIPRIS, NTIS, KOSIS 데이터를 AI가 종합 분석합니다.
+            KIPRIS, KOSIS 데이터를 AI가 종합 분석합니다.
             하루 이상 걸리던 특허 조사를 5분 안에 완료하세요.
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">

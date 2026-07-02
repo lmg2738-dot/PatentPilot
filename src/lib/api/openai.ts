@@ -2,14 +2,12 @@ import { PATENT_ANALYST_PROMPT, PATENT_ANALYST_PROMPT_FAST, PATENT_DRAFT_PROMPT 
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
 import { getEnv } from "@/lib/api/env";
 import type { ApiResult } from "@/lib/api/types";
-import type { AnalysisResult, PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
+import type { AnalysisResult, PatentResult, MarketData } from "@/types";
 
 interface AnalyzeInput {
   query: string;
   patents: PatentResult[];
-  ntisProjects: NtisProject[];
   marketData: MarketData[];
-  policies: PolicyInfo[];
   patentCount: number;
 }
 
@@ -107,16 +105,10 @@ ${patentLines}
 ${input.query}
 
 ## 특허 검색 결과 (총 ${input.patentCount}건)
-${input.patents.slice(0, 10).map((p) => `- [${p.applicationNumber}] ${p.title} (출원인: ${p.applicant}, IPC: ${p.ipc})`).join("\n")}
-
-## NTIS R&D 과제
-${input.ntisProjects.map((p) => `- ${p.title} (${p.organization}, 예산: ${p.budget}원)`).join("\n")}
+${patentLines}
 
 ## 시장 데이터
 ${input.marketData.map((m) => `- ${m.marketName}: ${m.marketSize}, 성장률 ${m.growthRate}`).join("\n")}
-
-## 관련 정책
-${input.policies.map((p) => `- ${p.title} (${p.department})`).join("\n")}
 `;
 }
 
@@ -168,10 +160,12 @@ function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisRe
       marketSize: (structured.marketSize as string) || input.marketData[0]?.marketSize || "4조원",
       growthRate: (structured.growthRate as string) || input.marketData[0]?.growthRate || "18%",
       summary: (structured.marketSummary as string) ||
-        "시장 성장세가 양호하며 정부 지원 정책과 맞물려 사업 기회가 큽니다.",
+        "시장 성장세가 양호하며 사업 기회가 큽니다.",
     },
-    governmentSupport: (structured.governmentSupport as string[]) ||
-      input.policies.map((p) => p.title),
+    governmentSupport: (structured.governmentSupport as string[]) || [
+      "중소기업 R&D 지원사업",
+      "AI 바우처 지원사업",
+    ],
     risks: (structured.risks as string[]) || [
       "대기업의 선행 특허 다수 존재",
       "기술 표준화 경쟁 심화",
@@ -181,7 +175,6 @@ function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisRe
       "선행기술조사 심화 수행",
       "차별화 포인트 명확화",
       "프로토타입 개발 착수",
-      "정부 R&D 과제 공모 참여",
     ],
     technicalDifficulty: (structured.technicalDifficulty as string) || "중상",
     recommendedBM: (structured.recommendedBM as string) || "B2B SaaS + 하드웨어 번들",
@@ -210,7 +203,7 @@ function getMockAnalysis(input: AnalyzeInput): AnalysisResult {
       growthRate: input.marketData[0]?.growthRate || "18%",
       summary: "보안시장과 AI 산업의 동반 성장으로 시장 진입 기회가 우수합니다.",
     },
-    governmentSupport: input.policies.map((p) => p.title),
+    governmentSupport: ["중소기업 R&D 지원사업", "AI 바우처 지원사업"],
     risks: [
       "대기업의 선행 특허 다수 존재",
       "대기업 경쟁 심화",
