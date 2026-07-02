@@ -7,6 +7,8 @@ import { analyzePatentIdea } from "@/lib/api/openai";
 import { createClient } from "@/lib/supabase/server";
 import type { DataSourcesMeta } from "@/lib/api/types";
 
+export const maxDuration = 60;
+
 const analyzeSchema = z.object({
   query: z.string().min(1).max(200),
 });

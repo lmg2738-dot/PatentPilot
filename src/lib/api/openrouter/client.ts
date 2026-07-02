@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getEnv } from "@/lib/api/env";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const MODELS_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
@@ -70,7 +71,7 @@ function isRetryableModelError(error: unknown): boolean {
 }
 
 export function getOpenRouterClient(): OpenAI | null {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = getEnv("OPENROUTER_API_KEY");
   if (!apiKey) return null;
 
   return new OpenAI({
@@ -84,7 +85,7 @@ export function getOpenRouterClient(): OpenAI | null {
 }
 
 async function fetchFreeModelsFromApi(): Promise<string[]> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = getEnv("OPENROUTER_API_KEY");
   if (!apiKey) return [];
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/models`, {

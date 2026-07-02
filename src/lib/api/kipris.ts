@@ -1,5 +1,6 @@
 import type { ApiResult } from "@/lib/api/types";
 import type { PatentResult } from "@/types";
+import { getEnv } from "@/lib/api/env";
 import { formatKiprisDate, getXmlItems, getXmlText } from "@/lib/api/xml";
 
 const KIPRIS_BASE_URL = "https://plus.kipris.or.kr/kipo-api/kipi";
@@ -10,7 +11,7 @@ export interface PatentSearchResult {
 }
 
 export async function searchPatents(query: string): Promise<ApiResult<PatentSearchResult>> {
-  const apiKey = process.env.KIPRIS_API_KEY;
+  const apiKey = getEnv("KIPRIS_API_KEY");
 
   if (!apiKey) {
     return {
@@ -19,7 +20,7 @@ export async function searchPatents(query: string): Promise<ApiResult<PatentSear
         totalCount: 230,
       },
       source: "mock",
-      message: "KIPRIS_API_KEY 미설정",
+      message: "KIPRIS_API_KEY 미설정 — Vercel 환경변수 등록 후 Redeploy 필요",
     };
   }
 
@@ -33,7 +34,11 @@ export async function searchPatents(query: string): Promise<ApiResult<PatentSear
 
     const response = await fetch(
       `${KIPRIS_BASE_URL}/patUtiModInfoSearchSevice/getWordSearch?${params}`,
-      { cache: "no-store" }
+      {
+        cache: "no-store",
+        headers: { Accept: "application/xml, text/xml, */*" },
+        signal: AbortSignal.timeout(15000),
+      }
     );
 
     const xml = await response.text();

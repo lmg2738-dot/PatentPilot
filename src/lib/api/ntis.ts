@@ -1,16 +1,17 @@
 import type { ApiResult } from "@/lib/api/types";
 import type { NtisProject } from "@/types";
+import { getEnv } from "@/lib/api/env";
 
 const NTIS_BASE_URL = "https://www.ntis.go.kr/rndopen/openApi";
 
 export async function searchNtisProjects(query: string): Promise<ApiResult<NtisProject[]>> {
-  const apiKey = process.env.NTIS_API_KEY;
+  const apiKey = getEnv("NTIS_API_KEY");
 
   if (!apiKey) {
     return {
       data: getMockNtisProjects(query),
       source: "mock",
-      message: "NTIS_API_KEY 미설정",
+      message: "NTIS_API_KEY 미설정 (선택)",
     };
   }
 
@@ -24,7 +25,7 @@ export async function searchNtisProjects(query: string): Promise<ApiResult<NtisP
 
     const response = await fetch(
       `${NTIS_BASE_URL}/public_project?${params}`,
-      { cache: "no-store" }
+      { cache: "no-store", signal: AbortSignal.timeout(15000) }
     );
 
     if (!response.ok) {

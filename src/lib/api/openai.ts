@@ -1,5 +1,6 @@
 import { PATENT_ANALYST_PROMPT, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
+import { getEnv } from "@/lib/api/env";
 import type { ApiResult } from "@/lib/api/types";
 import type { AnalysisResult, PatentResult, NtisProject, MarketData, PolicyInfo } from "@/types";
 
@@ -13,11 +14,11 @@ interface AnalyzeInput {
 }
 
 export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<AnalysisResult>> {
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!getEnv("OPENROUTER_API_KEY")) {
     return {
       data: getMockAnalysis(input),
       source: "mock",
-      message: "OPENROUTER_API_KEY 미설정",
+      message: "OPENROUTER_API_KEY 미설정 — Vercel 환경변수 등록 후 Redeploy 필요",
     };
   }
 
@@ -49,7 +50,7 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
 }
 
 export async function generatePatentDraft(idea: string): Promise<string> {
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!getEnv("OPENROUTER_API_KEY")) {
     return getMockPatentDraft(idea);
   }
 
