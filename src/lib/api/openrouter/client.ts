@@ -1,8 +1,9 @@
 import OpenAI from "openai";
 import { getEnv } from "@/lib/api/env";
+import { withTimeout } from "@/lib/api/timeout";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const MODELS_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+const MODELS_CACHE_TTL_MS = 60 * 60 * 1000;
 
 interface OpenRouterModel {
   id: string;
@@ -25,7 +26,25 @@ interface ModelsCache {
 
 let modelsCache: ModelsCache | null = null;
 const blockedModels = new Map<string, number>();
-const BLOCK_TTL_MS = 30 * 60 * 1000; // 30분
+const BLOCK_TTL_MS = 30 * 60 * 1000;
+
+const VERCEL_FAST_MODELS = [
+  "google/gemma-2-9b-it:free",
+  "mistralai/mistral-7b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2.5-7b-instruct:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+];
+
+const STATIC_FALLBACK_MODELS = [
+  "openrouter/free",
+  "google/gemma-2-9b-it:free",
+  "mistralai/mistral-7b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2.5-7b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+];
 
 function isPricingFree(pricing?: OpenRouterModel["pricing"]): boolean {
   if (!pricing) return false;
@@ -53,21 +72,65 @@ export function markModelUnavailable(modelId: string): void {
   blockedModels.set(modelId, Date.now() + BLOCK_TTL_MS);
 }
 
-function isRetryableModelError(error: unknown): boolean {
-  if (!(error instanceof OpenAI.APIError)) return false;
+function getErrorMessage(error: unknown): string {
+  if (error instanceof OpenAI.APIError) {
+    return error.message || "";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
 
-  const message = (error.message || "").toLowerCase();
+function isQuotaOrLimitError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("quota") ||
+    lower.includes("rate limit") ||
+    lower.includes("limit exceeded") ||
+    lower.includes("insufficient") ||
+    lower.includes("credit") ||
+    lower.includes("exhausted") ||
+    lower.includes("capacity") ||
+    lower.includes("free model") ||
+    lower.includes("free tier") ||
+    lower.includes("usage limit") ||
+    lower.includes("daily limit") ||
+    lower.includes("too many requests")
+  );
+}
+
+function isRetryableModelError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  const lower = message.toLowerCase();
+
+  if (error instanceof OpenAI.APIError) {
+    const status = error.status ?? 0;
+    if ([402, 404, 408, 429, 500, 502, 503, 529].includes(status)) {
+      return true;
+    }
+  }
+
+  if (isQuotaOrLimitError(message)) {
+    return true;
+  }
 
   return (
-    error.status === 404 ||
-    error.status === 429 ||
-    error.status === 503 ||
-    message.includes("model") ||
-    message.includes("not found") ||
-    message.includes("unavailable") ||
-    message.includes("no endpoints") ||
-    message.includes("rate limit")
+    lower.includes("model") ||
+    lower.includes("not found") ||
+    lower.includes("unavailable") ||
+    lower.includes("no endpoints") ||
+    lower.includes("timeout") ||
+    lower.includes("overloaded")
   );
+}
+
+function dedupeModels(models: string[]): string[] {
+  return [...new Set(models.filter(Boolean))];
+}
+
+function filterAvailable(models: string[]): string[] {
+  return models.filter((id) => !isModelBlocked(id));
 }
 
 export function getOpenRouterClient(): OpenAI | null {
@@ -90,7 +153,7 @@ async function fetchFreeModelsFromApi(): Promise<string[]> {
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    next: { revalidate: 3600 },
+    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -106,62 +169,62 @@ async function fetchFreeModelsFromApi(): Promise<string[]> {
         !model.architecture?.output_modalities ||
         model.architecture.output_modalities.includes("text");
 
-      return supportsText && isPricingFree(model.pricing) && !isModelBlocked(model.id);
+      return supportsText && isPricingFree(model.pricing);
     })
     .sort((a, b) => (b.context_length ?? 0) - (a.context_length ?? 0))
     .map((model) => model.id);
 
-  // :free 변형 모델 우선
   const freeVariant = freeModels.filter((id) => id.includes(":free"));
   const others = freeModels.filter((id) => !id.includes(":free"));
 
-  return [...new Set([...freeVariant, ...others])];
+  return dedupeModels([...freeVariant, ...others]);
 }
 
-const VERCEL_FAST_MODELS = [
-  "google/gemma-2-9b-it:free",
-  "mistralai/mistral-7b-instruct:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-];
-
-const VERCEL_FALLBACK_MODELS = [
-  "google/gemma-2-9b-it:free",
-  "mistralai/mistral-7b-instruct:free",
-];
-
-export async function getFreeModelCandidates(fast = false): Promise<string[]> {
-  if (process.env.VERCEL) {
-    const models = fast ? VERCEL_FAST_MODELS : VERCEL_FALLBACK_MODELS;
-    return models.filter((id) => !isModelBlocked(id));
-  }
-
-  const now = Date.now();
-
-  if (modelsCache && now - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS) {
-    const available = modelsCache.models.filter((id) => !isModelBlocked(id));
-    if (available.length > 0) return available;
-  }
-
+async function discoverFreeModelsFromApi(): Promise<string[]> {
   try {
-    const models = await fetchFreeModelsFromApi();
-    modelsCache = { models, fetchedAt: now };
-
-    const available = models.filter((id) => !isModelBlocked(id));
-    if (available.length > 0) return available;
+    const fetchModels = fetchFreeModelsFromApi();
+    const timeoutMs = process.env.VERCEL ? 2500 : 8000;
+    const models = await withTimeout(fetchModels, timeoutMs, () => [] as string[]);
+    if (models.length > 0) {
+      modelsCache = { models, fetchedAt: Date.now() };
+    }
+    return models;
   } catch (error) {
     console.error("Failed to fetch OpenRouter free models:", error);
+    return [];
+  }
+}
+
+export async function getFreeModelCandidates(fast = false): Promise<string[]> {
+  const staticList = process.env.VERCEL
+    ? VERCEL_FAST_MODELS
+    : fast
+      ? VERCEL_FAST_MODELS
+      : STATIC_FALLBACK_MODELS;
+
+  let candidates = filterAvailable(dedupeModels(staticList));
+
+  const now = Date.now();
+  if (
+    modelsCache &&
+    now - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS &&
+    candidates.length < 2
+  ) {
+    candidates = filterAvailable(
+      dedupeModels([...candidates, ...modelsCache.models])
+    );
   }
 
-  // API 조회 실패 시 폴백 (사용 불가 모델은 런타임에서 제외)
-  const fallback = [
-    "openrouter/free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "mistralai/mistral-7b-instruct:free",
-  ];
+  if (candidates.length < 2) {
+    const discovered = filterAvailable(await discoverFreeModelsFromApi());
+    candidates = filterAvailable(dedupeModels([...candidates, ...discovered]));
+  }
 
-  return fallback.filter((id) => !isModelBlocked(id));
+  if (candidates.length === 0) {
+    candidates = filterAvailable(STATIC_FALLBACK_MODELS);
+  }
+
+  return candidates;
 }
 
 interface ChatCompletionParams {
@@ -169,6 +232,19 @@ interface ChatCompletionParams {
   temperature?: number;
   max_tokens?: number;
   fast?: boolean;
+}
+
+function getModelAttemptTimeout(
+  isVercel: boolean,
+  remainingMs: number,
+  attemptIndex: number
+): number {
+  if (!isVercel) {
+    return Math.min(60000, remainingMs - 200);
+  }
+
+  const preferred = attemptIndex === 0 ? 4500 : 3000;
+  return Math.max(1500, Math.min(preferred, remainingMs - 200));
 }
 
 export async function createFreeChatCompletion(
@@ -180,45 +256,83 @@ export async function createFreeChatCompletion(
   }
 
   const isVercel = Boolean(process.env.VERCEL);
-  const candidates = await getFreeModelCandidates(params.fast ?? isVercel);
-  const modelsToTry = isVercel
-    ? candidates.slice(0, params.fast === false ? 2 : 1)
-    : candidates;
-
-  if (modelsToTry.length === 0) {
-    throw new Error("No available free OpenRouter models");
-  }
-
-  const requestTimeoutMs = isVercel ? 9000 : 60000;
   const maxTokens = params.max_tokens ?? (isVercel ? 700 : 2000);
+  const totalBudgetMs = isVercel ? 9000 : 120000;
+  const maxAttempts = isVercel ? 5 : 12;
+  const startTime = Date.now();
 
+  let candidates = await getFreeModelCandidates(params.fast ?? isVercel);
   let lastError: unknown;
+  let attemptIndex = 0;
+  let candidateIndex = 0;
 
-  for (const model of modelsToTry) {
+  while (attemptIndex < maxAttempts) {
+    const elapsed = Date.now() - startTime;
+    const remainingMs = totalBudgetMs - elapsed;
+    if (remainingMs < 1500) {
+      break;
+    }
+
+    if (candidateIndex >= candidates.length) {
+      const discovered = filterAvailable(await discoverFreeModelsFromApi());
+      candidates = filterAvailable(
+        dedupeModels([...candidates, ...discovered, ...STATIC_FALLBACK_MODELS])
+      );
+      candidateIndex = 0;
+
+      if (discovered.length === 0 && candidates.every((id) => isModelBlocked(id))) {
+        break;
+      }
+      if (candidateIndex >= candidates.length) {
+        break;
+      }
+    }
+
+    const model = candidates[candidateIndex];
+    candidateIndex += 1;
+
+    if (isModelBlocked(model)) {
+      continue;
+    }
+
+    const modelTimeoutMs = getModelAttemptTimeout(isVercel, remainingMs, attemptIndex);
+
     try {
-      const completion = await client.chat.completions.create(
-        {
-          model,
-          messages: params.messages,
-          temperature: params.temperature ?? 0.5,
-          max_tokens: maxTokens,
-        },
-        { timeout: requestTimeoutMs }
+      const completion = await withTimeout(
+        client.chat.completions.create(
+          {
+            model,
+            messages: params.messages,
+            temperature: params.temperature ?? 0.5,
+            max_tokens: maxTokens,
+          },
+          { timeout: modelTimeoutMs }
+        ),
+        modelTimeoutMs + 500,
+        () => {
+          throw new Error("MODEL_TIMEOUT");
+        }
       );
 
       const content = completion.choices[0]?.message?.content || "";
       if (!content.trim()) {
         markModelUnavailable(model);
+        console.warn(`OpenRouter empty response, trying next model: ${model}`);
+        attemptIndex += 1;
         continue;
       }
 
       return { content, model };
     } catch (error) {
       lastError = error;
+      const message = getErrorMessage(error);
 
       if (isRetryableModelError(error)) {
         markModelUnavailable(model);
-        console.warn(`OpenRouter model unavailable, trying next: ${model}`);
+        console.warn(
+          `OpenRouter model failed (${message || "unknown"}), trying next free model: ${model}`
+        );
+        attemptIndex += 1;
         continue;
       }
 
@@ -228,5 +342,5 @@ export async function createFreeChatCompletion(
 
   throw lastError instanceof Error
     ? lastError
-    : new Error("All free OpenRouter models failed");
+    : new Error("All free OpenRouter models failed or quota exhausted");
 }
