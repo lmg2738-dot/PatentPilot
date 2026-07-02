@@ -32,8 +32,8 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
         },
         { role: "user", content: context },
       ],
-      temperature: 0.5,
-      max_tokens: isVercel ? 700 : 1500,
+      temperature: 0.3,
+      max_tokens: isVercel ? 450 : 1500,
       fast: isVercel,
     });
 
@@ -85,7 +85,7 @@ export async function generatePatentDraft(idea: string): Promise<string> {
 
 function buildAnalysisContext(input: AnalyzeInput, compact = false): string {
   const patentLines = input.patents
-    .slice(0, compact ? 3 : 10)
+    .slice(0, compact ? 2 : 10)
     .map((p) =>
       compact
         ? `- ${p.title} (${p.applicant})`
