@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -38,18 +38,15 @@ export default function PatentSearchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar currentPath="/dashboard/search" />
-      <main className="pl-64">
-        <div className="p-8">
-          <Header
-            title="특허 검색"
-            description="KIPRIS API를 통한 국내 특허 검색"
-          />
+    <DashboardShell currentPath="/dashboard/search">
+      <Header
+        title="특허 검색"
+        description="KIPRIS API를 통한 국내 특허 검색"
+      />
 
-          <Card className="mb-6">
-            <div className="flex gap-3">
-              <div className="flex-1 relative">
+      <Card className="mb-6">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <Input
                   value={query}
@@ -59,16 +56,16 @@ export default function PatentSearchPage() {
                   className="pl-10"
                 />
               </div>
-              <Button onClick={handleSearch} loading={loading}>
-                검색
-              </Button>
-            </div>
-          </Card>
+          <Button onClick={handleSearch} loading={loading} className="w-full sm:w-auto shrink-0">
+            검색
+          </Button>
+        </div>
+      </Card>
 
-          {searched && (
-            <Card padding={false}>
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <p className="text-sm text-gray-500">
+      {searched && (
+        <Card padding={false}>
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <p className="text-sm text-gray-500 break-words">
                   &quot;{query}&quot; 검색 결과:{" "}
                   <span className="font-semibold text-gray-900">
                     {totalCount.toLocaleString()}건
@@ -127,8 +124,6 @@ export default function PatentSearchPage() {
               </div>
             </Card>
           )}
-        </div>
-      </main>
-    </div>
+    </DashboardShell>
   );
 }

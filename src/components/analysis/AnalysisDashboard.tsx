@@ -114,7 +114,7 @@ export function AnalysisDashboard({ query, analysis }: AnalysisDashboardProps) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="text-center">
           <Clock className="w-6 h-6 text-gray-400 mx-auto mb-2" />
           <p className="text-xs text-gray-500">개발 기간</p>

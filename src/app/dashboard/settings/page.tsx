@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -42,11 +42,8 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("user@example.com");
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar currentPath="/dashboard/settings" />
-      <main className="pl-64">
-        <div className="p-8">
-          <Header title="설정" description="계정, 플랜, 즐겨찾기 관리" />
+    <DashboardShell currentPath="/dashboard/settings">
+      <Header title="설정" description="계정, 플랜, 즐겨찾기 관리" />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
@@ -127,8 +124,6 @@ export default function SettingsPage() {
               </div>
             </Card>
           </div>
-        </div>
-      </main>
-    </div>
+    </DashboardShell>
   );
 }

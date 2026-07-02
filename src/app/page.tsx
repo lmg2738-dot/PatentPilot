@@ -80,8 +80,8 @@ export default function HomePage() {
             </div>
             <span className="text-xl font-bold text-gray-900">PatentPilot AI</span>
           </div>
-          <div className="flex items-center gap-4">
-            <Link href="/auth/login" className="text-sm text-gray-600 hover:text-gray-900">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/auth/login" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">
               로그인
             </Link>
             <Link href="/auth/signup">
@@ -107,15 +107,15 @@ export default function HomePage() {
             KIPRIS, KOSIS 데이터를 AI가 종합 분석합니다.
             하루 이상 걸리던 특허 조사를 5분 안에 완료하세요.
           </p>
-          <div className="mt-10 flex items-center justify-center gap-4">
-            <Link href="/dashboard">
-              <Button size="lg">
+          <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4 px-4">
+            <Link href="/dashboard" className="w-full sm:w-auto">
+              <Button size="lg" className="w-full">
                 <Sparkles className="w-5 h-5" />
                 지금 분석 시작
               </Button>
             </Link>
-            <Link href="#pricing">
-              <Button variant="outline" size="lg">요금제 보기</Button>
+            <Link href="#pricing" className="w-full sm:w-auto">
+              <Button variant="outline" size="lg" className="w-full">요금제 보기</Button>
             </Link>
           </div>
 
@@ -130,7 +130,7 @@ export default function HomePage() {
               </div>
               <div className="space-y-3 text-sm">
                 <p className="text-gray-400">검색어: <span className="text-white font-medium">AI CCTV</span></p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="bg-gray-800 rounded-lg p-3">
                     <p className="text-gray-400 text-xs">특허 가능성</p>
                     <p className="text-brand-400 text-xl font-bold">78점</p>

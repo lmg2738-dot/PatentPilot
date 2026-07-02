@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -64,19 +64,16 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar currentPath="/dashboard/alerts" />
-      <main className="pl-64">
-        <div className="p-8">
-          <Header
-            title="특허 알림"
-            description="경쟁사 신규 특허 등록 시 이메일, Slack, 카카오톡 알림"
-          >
-            <Button onClick={() => setShowForm(true)}>
-              <Plus className="w-4 h-4" />
-              알림 추가
-            </Button>
-          </Header>
+    <DashboardShell currentPath="/dashboard/alerts">
+      <Header
+        title="특허 알림"
+        description="경쟁사 신규 특허 등록 시 이메일, Slack, 카카오톡 알림"
+      >
+        <Button onClick={() => setShowForm(true)} className="w-full sm:w-auto">
+          <Plus className="w-4 h-4" />
+          알림 추가
+        </Button>
+      </Header>
 
           {showForm && (
             <Card className="mb-6">
@@ -173,8 +170,6 @@ export default function AlertsPage() {
               경쟁사 모니터링, Slack/카카오톡 연동 알림은 Business 플랜(149,000원/월)에서 이용 가능합니다.
             </p>
           </Card>
-        </div>
-      </main>
-    </div>
+    </DashboardShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Header } from "@/components/layout/Header";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -82,14 +82,11 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar currentPath="/dashboard/reports" />
-      <main className="pl-64">
-        <div className="p-8">
-          <Header
-            title="PDF 리포트"
-            description="분석 보고서 PDF 생성 및 AI 특허 명세서 초안 작성"
-          />
+    <DashboardShell currentPath="/dashboard/reports">
+      <Header
+        title="PDF 리포트"
+        description="분석 보고서 PDF 생성 및 AI 특허 명세서 초안 작성"
+      />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
@@ -136,13 +133,11 @@ export default function ReportsPage() {
           {draftResult && (
             <Card className="mt-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">생성된 특허 초안</h2>
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap break-words">
                 {draftResult}
               </div>
             </Card>
           )}
-        </div>
-      </main>
-    </div>
+    </DashboardShell>
   );
 }
