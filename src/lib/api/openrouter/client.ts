@@ -3,11 +3,10 @@ import { getEnv } from "@/lib/api/env";
 import { withTimeout } from "@/lib/api/timeout";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const MODELS_CACHE_TTL_MS = 60 * 60 * 1000;
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface OpenRouterModel {
   id: string;
-  name?: string;
   context_length?: number;
   pricing?: {
     prompt?: string;
@@ -16,6 +15,7 @@ interface OpenRouterModel {
   };
   architecture?: {
     output_modalities?: string[];
+    input_modalities?: string[];
   };
 }
 
@@ -26,46 +26,53 @@ interface ModelsCache {
 
 let modelsCache: ModelsCache | null = null;
 const blockedModels = new Map<string, number>();
-const BLOCK_TTL_MS = 30 * 60 * 1000;
+const BLOCK_TTL_MS = 20 * 60 * 1000;
 
-/** Vercel: 작고 빠른 모델 우선 (병렬 경쟁용) */
-const VERCEL_FAST_MODELS = [
+/** API 장애 시 폴백 — 2026-06 OpenRouter max_price=0 기준 */
+const KNOWN_FREE_MODELS = [
+  "openrouter/free",
+  "liquid/lfm-2.5-1.2b-instruct:free",
+  "liquid/lfm-2.5-1.2b-thinking:free",
   "meta-llama/llama-3.2-3b-instruct:free",
+  "nvidia/nemotron-nano-9b-v2:free",
   "google/gemma-2-9b-it:free",
   "mistralai/mistral-7b-instruct:free",
   "qwen/qwen-2.5-7b-instruct:free",
-  "openrouter/free",
-];
-
-const STATIC_FALLBACK_MODELS = [
-  "openrouter/free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "google/gemma-2-9b-it:free",
-  "mistralai/mistral-7b-instruct:free",
-  "qwen/qwen-2.5-7b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
+  "cohere/north-mini-code:free",
+  "openai/gpt-oss-20b:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-coder:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+  "openai/gpt-oss-120b:free",
+  "deepseek/deepseek-r1-distill-llama-70b:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+  "nvidia/nemotron-3-nano-30b-a3b:free",
+  "poolside/laguna-xs.2:free",
+  "google/gemma-4-26b-a4b-it:free",
 ];
 
 function isPricingFree(pricing?: OpenRouterModel["pricing"]): boolean {
   if (!pricing) return false;
-
   const prompt = parseFloat(pricing.prompt ?? "1");
   const completion = parseFloat(pricing.completion ?? "1");
   const request = parseFloat(pricing.request ?? "0");
-
   return prompt === 0 && completion === 0 && request === 0;
+}
+
+function supportsTextOutput(model: OpenRouterModel): boolean {
+  const outputs = model.architecture?.output_modalities;
+  if (!outputs) return true;
+  return outputs.includes("text");
 }
 
 function isModelBlocked(modelId: string): boolean {
   const blockedUntil = blockedModels.get(modelId);
   if (!blockedUntil) return false;
-
   if (Date.now() > blockedUntil) {
     blockedModels.delete(modelId);
     return false;
   }
-
   return true;
 }
 
@@ -74,56 +81,34 @@ export function markModelUnavailable(modelId: string): void {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof OpenAI.APIError) {
-    return error.message || "";
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
+  if (error instanceof OpenAI.APIError) return error.message || "";
+  if (error instanceof Error) return error.message;
   return String(error);
 }
 
-function isQuotaOrLimitError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("quota") ||
-    lower.includes("rate limit") ||
-    lower.includes("limit exceeded") ||
-    lower.includes("insufficient") ||
-    lower.includes("credit") ||
-    lower.includes("exhausted") ||
-    lower.includes("capacity") ||
-    lower.includes("free model") ||
-    lower.includes("free tier") ||
-    lower.includes("usage limit") ||
-    lower.includes("daily limit") ||
-    lower.includes("too many requests")
-  );
-}
-
 function isRetryableModelError(error: unknown): boolean {
-  const message = getErrorMessage(error);
-  const lower = message.toLowerCase();
+  const message = getErrorMessage(error).toLowerCase();
 
   if (error instanceof OpenAI.APIError) {
     const status = error.status ?? 0;
-    if ([402, 404, 408, 429, 500, 502, 503, 529].includes(status)) {
-      return true;
-    }
-  }
-
-  if (isQuotaOrLimitError(message)) {
-    return true;
+    if ([402, 404, 408, 429, 500, 502, 503, 529].includes(status)) return true;
   }
 
   return (
-    lower.includes("model") ||
-    lower.includes("not found") ||
-    lower.includes("unavailable") ||
-    lower.includes("no endpoints") ||
-    lower.includes("timeout") ||
-    lower.includes("overloaded") ||
-    lower.includes("empty:")
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("limit") ||
+    message.includes("credit") ||
+    message.includes("exhausted") ||
+    message.includes("capacity") ||
+    message.includes("free") ||
+    message.includes("model") ||
+    message.includes("not found") ||
+    message.includes("unavailable") ||
+    message.includes("no endpoints") ||
+    message.includes("timeout") ||
+    message.includes("overloaded") ||
+    message.includes("empty:")
   );
 }
 
@@ -133,6 +118,21 @@ function dedupeModels(models: string[]): string[] {
 
 function filterAvailable(models: string[]): string[] {
   return models.filter((id) => !isModelBlocked(id));
+}
+
+function prioritizeFreeModels(models: string[]): string[] {
+  const score = (id: string): number => {
+    if (id === "openrouter/free") return 0;
+    if (id.includes("1.2b") || id.includes("1b")) return 1;
+    if (id.includes("3b")) return 2;
+    if (id.includes("7b") || id.includes("9b") || id.includes("nano")) return 3;
+    if (id.includes("20b")) return 4;
+    if (id.includes("70b") || id.includes("72b") || id.includes("80b")) return 8;
+    if (id.includes("120b") || id.includes("405b") || id.includes("550b")) return 9;
+    return 5;
+  };
+
+  return [...models].sort((a, b) => score(a) - score(b));
 }
 
 export function getOpenRouterClient(): OpenAI | null {
@@ -151,10 +151,9 @@ export function getOpenRouterClient(): OpenAI | null {
 
 async function fetchFreeModelsFromApi(): Promise<string[]> {
   const apiKey = getEnv("OPENROUTER_API_KEY");
-  if (!apiKey) return [];
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
     cache: "no-store",
   });
 
@@ -166,73 +165,53 @@ async function fetchFreeModelsFromApi(): Promise<string[]> {
   const models = data.data ?? [];
 
   const freeModels = models
-    .filter((model) => {
-      const supportsText =
-        !model.architecture?.output_modalities ||
-        model.architecture.output_modalities.includes("text");
-
-      return supportsText && isPricingFree(model.pricing);
-    })
+    .filter((model) => isPricingFree(model.pricing) && supportsTextOutput(model))
     .sort((a, b) => (a.context_length ?? 999999) - (b.context_length ?? 999999))
     .map((model) => model.id);
 
   const freeVariant = freeModels.filter((id) => id.includes(":free"));
-  const others = freeModels.filter((id) => !id.includes(":free"));
+  const router = freeModels.filter((id) => id === "openrouter/free");
+  const others = freeModels.filter((id) => !id.includes(":free") && id !== "openrouter/free");
 
-  return dedupeModels([...freeVariant, ...others]);
+  return dedupeModels([...router, ...freeVariant, ...others]);
 }
 
-async function discoverFreeModelsFromApi(): Promise<string[]> {
+async function discoverFreeModels(): Promise<string[]> {
+  const now = Date.now();
+  if (modelsCache && now - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS) {
+    return filterAvailable(modelsCache.models);
+  }
+
   try {
-    const fetchModels = fetchFreeModelsFromApi();
-    const timeoutMs = process.env.VERCEL ? 2000 : 8000;
-    const models = await withTimeout(fetchModels, timeoutMs, () => [] as string[]);
-    if (models.length > 0) {
-      modelsCache = { models, fetchedAt: Date.now() };
+    const discovered = await withTimeout(
+      fetchFreeModelsFromApi(),
+      process.env.VERCEL ? 3000 : 8000,
+      () => [] as string[]
+    );
+
+    const merged = prioritizeFreeModels(
+      filterAvailable(dedupeModels([...discovered, ...KNOWN_FREE_MODELS]))
+    );
+
+    if (merged.length > 0) {
+      modelsCache = { models: merged, fetchedAt: now };
+      return merged;
     }
-    return models;
   } catch (error) {
     console.error("Failed to fetch OpenRouter free models:", error);
-    return [];
   }
+
+  return filterAvailable(prioritizeFreeModels(KNOWN_FREE_MODELS));
 }
 
-export async function getFreeModelCandidates(fast = false): Promise<string[]> {
-  if (process.env.VERCEL) {
-    return filterAvailable(VERCEL_FAST_MODELS);
-  }
-
-  const staticList = fast ? VERCEL_FAST_MODELS : STATIC_FALLBACK_MODELS;
-  let candidates = filterAvailable(dedupeModels(staticList));
-
-  const now = Date.now();
-  if (
-    modelsCache &&
-    now - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS &&
-    candidates.length < 2
-  ) {
-    candidates = filterAvailable(
-      dedupeModels([...candidates, ...modelsCache.models])
-    );
-  }
-
-  if (candidates.length < 2) {
-    const discovered = filterAvailable(await discoverFreeModelsFromApi());
-    candidates = filterAvailable(dedupeModels([...candidates, ...discovered]));
-  }
-
-  if (candidates.length === 0) {
-    candidates = filterAvailable(STATIC_FALLBACK_MODELS);
-  }
-
-  return candidates;
+export async function getFreeModelCandidates(): Promise<string[]> {
+  return discoverFreeModels();
 }
 
 interface ChatCompletionParams {
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   temperature?: number;
   max_tokens?: number;
-  fast?: boolean;
 }
 
 async function trySingleModel(
@@ -246,7 +225,7 @@ async function trySingleModel(
     {
       model,
       messages: params.messages,
-      temperature: params.temperature ?? 0.3,
+      temperature: params.temperature ?? 0.2,
       max_tokens: maxTokens,
     },
     { timeout: timeoutMs }
@@ -261,82 +240,57 @@ async function trySingleModel(
   return { content, model };
 }
 
-/** Vercel: 여러 무료 모델을 동시에 호출해 가장 먼저 응답한 결과 사용 */
-async function createParallelCompletion(
+async function raceModels(
   client: OpenAI,
   params: ChatCompletionParams,
   models: string[],
   maxTokens: number,
-  timeoutMs: number
+  timeoutMs: number,
+  limit: number
 ): Promise<{ content: string; model: string }> {
-  const available = models.filter((id) => !isModelBlocked(id)).slice(0, 3);
+  const batch = models.filter((id) => !isModelBlocked(id)).slice(0, limit);
 
-  if (available.length === 0) {
+  if (batch.length === 0) {
     throw new Error("No available free OpenRouter models");
   }
 
-  const attempts = available.map((model) =>
+  const attempts = batch.map((model) =>
     trySingleModel(client, model, params, maxTokens, timeoutMs).catch((error) => {
       if (isRetryableModelError(error)) {
         markModelUnavailable(model);
-        console.warn(
-          `OpenRouter parallel model failed (${getErrorMessage(error)}): ${model}`
-        );
       }
       throw error;
     })
   );
 
-  try {
-    return await Promise.any(attempts);
-  } catch (error) {
-    if (error instanceof AggregateError) {
-      const retryable = error.errors.some((err) => isRetryableModelError(err));
-      if (retryable) {
-        throw new Error("All parallel free models failed");
-      }
-    }
-    throw error;
-  }
+  return Promise.any(attempts);
 }
 
-async function createSequentialCompletion(
+async function trySequential(
   client: OpenAI,
   params: ChatCompletionParams,
-  candidates: string[],
+  models: string[],
   maxTokens: number,
-  totalBudgetMs: number
+  perModelMs: number
 ): Promise<{ content: string; model: string }> {
-  const startTime = Date.now();
   let lastError: unknown;
 
-  for (const model of candidates) {
+  for (const model of models) {
     if (isModelBlocked(model)) continue;
 
-    const elapsed = Date.now() - startTime;
-    const remainingMs = totalBudgetMs - elapsed;
-    if (remainingMs < 1500) break;
-
-    const modelTimeoutMs = Math.min(60000, remainingMs - 200);
-
     try {
-      return await trySingleModel(client, model, params, maxTokens, modelTimeoutMs);
+      return await trySingleModel(client, model, params, maxTokens, perModelMs);
     } catch (error) {
       lastError = error;
       if (isRetryableModelError(error)) {
         markModelUnavailable(model);
-        console.warn(
-          `OpenRouter model failed (${getErrorMessage(error)}), trying next: ${model}`
-        );
         continue;
       }
       throw error;
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("All free OpenRouter models failed");
+  throw lastError instanceof Error ? lastError : new Error("All free models failed");
 }
 
 export async function createFreeChatCompletion(
@@ -348,27 +302,45 @@ export async function createFreeChatCompletion(
   }
 
   const isVercel = Boolean(process.env.VERCEL);
-  const maxTokens = params.max_tokens ?? (isVercel ? 450 : 2000);
-  let candidates = await getFreeModelCandidates(params.fast ?? isVercel);
+  const maxTokens = params.max_tokens ?? (isVercel ? 400 : 2000);
+  const models = await discoverFreeModels();
 
   if (isVercel) {
-    try {
-      return await createParallelCompletion(client, params, candidates, maxTokens, 8000);
-    } catch (parallelError) {
-      console.warn("Parallel free models failed, quick fallback:", parallelError);
+    const run = async () => {
+      try {
+        return await trySingleModel(client, "openrouter/free", params, maxTokens, 5000);
+      } catch (error) {
+        console.warn("openrouter/free failed:", getErrorMessage(error));
+      }
 
-      const fallbackModels = filterAvailable(
-        dedupeModels(["openrouter/free", ...candidates])
-      ).slice(0, 2);
+      try {
+        return await raceModels(client, params, models, maxTokens, 7000, 6);
+      } catch (error) {
+        console.warn("Parallel free models failed:", getErrorMessage(error));
+      }
 
-      return createSequentialCompletion(client, params, fallbackModels, maxTokens, 2500);
-    }
+      const remaining = models.filter(
+        (id) => id !== "openrouter/free" && !isModelBlocked(id)
+      );
+      return trySequential(client, params, remaining.slice(0, 8), maxTokens, 2000);
+    };
+
+    return withTimeout(run(), 8800, () => {
+      throw new Error("AI_TIMEOUT");
+    });
   }
 
-  if (candidates.length < 3) {
-    const discovered = filterAvailable(await discoverFreeModelsFromApi());
-    candidates = filterAvailable(dedupeModels([...candidates, ...discovered]));
+  try {
+    return await trySingleModel(client, "openrouter/free", params, maxTokens, 15000);
+  } catch {
+    // continue
   }
 
-  return createSequentialCompletion(client, params, candidates, maxTokens, 120000);
+  try {
+    return await raceModels(client, params, models, maxTokens, 30000, 4);
+  } catch {
+    // continue
+  }
+
+  return trySequential(client, params, models, maxTokens, 45000);
 }

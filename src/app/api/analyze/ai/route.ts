@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzePatentIdea, createMockAnalysis } from "@/lib/api/openai";
+import { withTimeout } from "@/lib/api/timeout";
 import type { PatentResult, MarketData } from "@/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+
+const AI_TIMEOUT_MS = process.env.VERCEL ? 9500 : 90000;
 
 const aiSchema = z.object({
   query: z.string().min(1).max(200),
@@ -40,7 +43,15 @@ export async function POST(request: NextRequest) {
       patentCount: parsed.patentCount,
     };
 
-    const analysisResult = await analyzePatentIdea(input);
+    const analysisResult = await withTimeout(
+      analyzePatentIdea(input),
+      AI_TIMEOUT_MS,
+      () => ({
+        data: createMockAnalysis(input),
+        source: "mock" as const,
+        message: "AI 응답 지연 — 특허·시장 데이터 기반 분석 표시",
+      })
+    );
 
     const analysis = {
       ...analysisResult.data,
@@ -65,7 +76,7 @@ export async function POST(request: NextRequest) {
         patentCount: 0,
       }),
       source: "mock",
-      message: "AI 분석 오류 — Mock 결과 표시",
+      message: "AI 분석 오류 — 데이터 기반 분석 표시",
     });
   }
 }

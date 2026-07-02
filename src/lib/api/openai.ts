@@ -1,8 +1,11 @@
 import { PATENT_ANALYST_PROMPT, PATENT_ANALYST_PROMPT_FAST, PATENT_DRAFT_PROMPT } from "@/lib/prompts";
 import { createFreeChatCompletion } from "@/lib/api/openrouter/client";
 import { getEnv } from "@/lib/api/env";
+import { createDataDrivenAnalysis } from "@/lib/analysis-fallback";
 import type { ApiResult } from "@/lib/api/types";
 import type { AnalysisResult, PatentResult, MarketData } from "@/types";
+
+export { createDataDrivenAnalysis } from "@/lib/analysis-fallback";
 
 interface AnalyzeInput {
   query: string;
@@ -33,8 +36,7 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
         { role: "user", content: context },
       ],
       temperature: 0.3,
-      max_tokens: isVercel ? 450 : 1500,
-      fast: isVercel,
+      max_tokens: isVercel ? 400 : 1500,
     });
 
     const { content, model } = result;
@@ -50,13 +52,13 @@ export async function analyzePatentIdea(input: AnalyzeInput): Promise<ApiResult<
       (error.message === "AI_TIMEOUT" || error.message.toLowerCase().includes("timeout"));
     console.error("OpenRouter analysis failed, using mock:", error);
     return {
-      data: getMockAnalysis(input),
+      data: createDataDrivenAnalysis(input),
       source: "mock",
       message: isTimeout
-        ? "AI 분석 시간 초과 — 무료 모델 응답 지연으로 Mock 표시"
+        ? "AI 응답 지연 — 특허·시장 데이터 기반 분석 표시"
         : error instanceof Error
-          ? error.message
-          : "OpenRouter API 호출 실패",
+          ? `${error.message} — 데이터 기반 분석 표시`
+          : "OpenRouter 실패 — 데이터 기반 분석 표시",
     };
   }
 }
@@ -185,55 +187,25 @@ function parseAnalysisResponse(content: string, input: AnalyzeInput): AnalysisRe
 }
 
 export function createMockAnalysis(input: AnalyzeInput): AnalysisResult {
-  return getMockAnalysis(input);
+  return createDataDrivenAnalysis(input);
 }
 
 function getMockAnalysis(input: AnalyzeInput): AnalysisResult {
-  const competitors = [...new Set(input.patents.map((p) => p.applicant))].slice(0, 5);
-
-  return {
-    patentabilityScore: 78,
-    similarPatentCount: input.patentCount || 235,
-    similarPatents: input.patents.slice(0, 5),
-    competitors: competitors.length > 0 ? competitors : ["Hanwha Vision", "LG CNS", "SK쉴더스", "ETRI"],
-    differentiationStrategy:
-      "영상분석 대신 멀티모달 이벤트 탐지 기술로 접근하면 등록 가능성이 높습니다.",
-    marketPotential: {
-      marketSize: input.marketData[0]?.marketSize || "4조원",
-      growthRate: input.marketData[0]?.growthRate || "18%",
-      summary: "보안시장과 AI 산업의 동반 성장으로 시장 진입 기회가 우수합니다.",
-    },
-    governmentSupport: ["중소기업 R&D 지원사업", "AI 바우처 지원사업"],
-    risks: [
-      "대기업의 선행 특허 다수 존재",
-      "대기업 경쟁 심화",
-      "AI 규제 강화 가능성",
-    ],
-    recommendedActions: [
-      "차별화 전략 수립",
-      "프로토타입 개발",
-      "정부 지원사업 신청",
-    ],
-    technicalDifficulty: "중상",
-    recommendedBM: "B2B SaaS 구독 + 엣지 디바이스 판매",
-    developmentPeriod: "12-18개월",
-    investmentPotential: "높음",
-    fullReport: generateMockReport(input),
-  };
+  return createDataDrivenAnalysis(input);
 }
 
-function generateMockReport(input: AnalyzeInput): string {
+function generateMockReport(input: AnalyzeInput, score = 70): string {
   return `# ${input.query} 특허·사업성 분석 보고서
 
-## 1. 특허 가능성 점수: 78/100
-현재 유사 특허 ${input.patentCount || 235}건이 존재합니다.
+## 1. 특허 가능성 점수: ${score}/100
+현재 유사 특허 ${input.patentCount || 0}건이 존재합니다.
 
-## 2. 차별화 전략
-영상분석 대신 멀티모달 이벤트 탐지 기술로 접근
+## 2. 주요 경쟁사
+${[...new Set(input.patents.map((p) => p.applicant))].slice(0, 5).join(", ") || "-"}
 
 ## 3. 시장 잠재력
-- 시장규모: ${input.marketData[0]?.marketSize || "4조원"}
-- 성장률: ${input.marketData[0]?.growthRate || "18%"}
+- 시장규모: ${input.marketData[0]?.marketSize || "-"}
+- 성장률: ${input.marketData[0]?.growthRate || "-"}
 `;
 }
 

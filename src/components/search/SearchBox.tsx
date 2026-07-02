@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/Input";
 import { AnalysisDashboard } from "@/components/analysis/AnalysisDashboard";
 import { DataSourcesBanner } from "@/components/analysis/DataSourcesBanner";
 import { fetchJson } from "@/lib/fetch-json";
-import type { AnalysisResult } from "@/types";
+import { createDataDrivenAnalysis } from "@/lib/analysis-fallback";
+import type { AnalysisResult, MarketData } from "@/types";
 import type { DataSourcesMeta } from "@/lib/api/types";
 
 interface SearchBoxProps {
@@ -33,30 +34,13 @@ interface AnalyzeAiResponse {
   error?: string;
 }
 
-function buildFallbackAnalysis(
-  data: AnalyzeDataResponse
-): AnalysisResult {
-  const competitors = [...new Set(data.patents.map((p) => p.applicant))].slice(0, 5);
-  return {
-    patentabilityScore: 70,
-    similarPatentCount: data.patentCount,
-    similarPatents: data.patents.slice(0, 5),
-    competitors: competitors.length > 0 ? competitors : ["-"],
-    differentiationStrategy: "특허·시장 데이터 기반 차별화 전략 수립이 필요합니다.",
-    marketPotential: {
-      marketSize: (data.marketData[0] as { marketSize?: string })?.marketSize || "-",
-      growthRate: (data.marketData[0] as { growthRate?: string })?.growthRate || "-",
-      summary: "AI 분석 없이 데이터만 조회된 결과입니다.",
-    },
-    governmentSupport: ["정부 지원사업 검토 필요"],
-    risks: ["AI 분석 미완료"],
-    recommendedActions: ["AI 분석 재시도", "특허 상세 검색"],
-    technicalDifficulty: "-",
-    recommendedBM: "-",
-    developmentPeriod: "-",
-    investmentPotential: "-",
-    fullReport: "",
-  };
+function buildFallbackAnalysis(data: AnalyzeDataResponse): AnalysisResult {
+  return createDataDrivenAnalysis({
+    query: data.query,
+    patents: data.patents,
+    marketData: data.marketData as MarketData[],
+    patentCount: data.patentCount,
+  });
 }
 
 export function SearchBox({
@@ -123,7 +107,7 @@ export function SearchBox({
             marketData: data.marketData.slice(0, 3),
           }),
           },
-          15000
+          12000
         );
 
         if (!aiResponse.ok) {
@@ -139,7 +123,7 @@ export function SearchBox({
         aiData = {
           analysis: buildFallbackAnalysis(data),
           source: "mock",
-          message: "AI 분석 실패",
+          message: "AI 응답 지연 — 특허·시장 데이터 기반 분석 표시",
         };
       }
 

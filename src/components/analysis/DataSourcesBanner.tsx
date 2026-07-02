@@ -62,7 +62,7 @@ function getBannerMessage(
   }
 
   if (sources.analysis === "mock") {
-    return "AI 무료 모델 응답이 지연되어 Mock으로 표시되었습니다. 잠시 후 재시도하거나 Pro 플랜/Vercel Pro(60초)를 고려해 주세요.";
+    return "AI 무료 모델 응답 지연 — 특허·시장 live 데이터로 분석 점수·경쟁사를 계산했습니다.";
   }
 
   return null;
